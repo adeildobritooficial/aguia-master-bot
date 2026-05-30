@@ -1,0 +1,186 @@
+
+================================================================================
+[2026-05-30 22:33:27 UTC] INÍCIO DO ROBÔ OBSERVADOR
+--------------------------------------------------------------------------------
+ÁGUIA MASTER BOT iniciado em modo observador. Nenhuma ordem será executada.
+
+DADOS:
+- modo: OBSERVER
+- ambiente: PUBLIC_MARKET_DATA / BINANCE FUTURES TESTNET
+- ativos: BTCUSDT, ETHUSDT
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:27 UTC] COLETA BTC
+--------------------------------------------------------------------------------
+Coletando candles do BTC para contexto geral de mercado.
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:27 UTC] CONTEXTO BTC
+--------------------------------------------------------------------------------
+Contexto inicial do Bitcoin coletado.
+
+DADOS:
+- ativo: BTCUSDT
+- preço_atual: 73869.6
+- candle_4h: RED
+- candle_5m: RED
+- volume_5m: LOW
+- suporte_4h: 72603.5
+- resistência_4h: 77871.5
+- perto_suporte_4h: True
+- perto_resistência_4h: False
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:27 UTC] ANÁLISE DE ATIVO
+--------------------------------------------------------------------------------
+Iniciando análise de BTCUSDT.
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:28 UTC] DECISÃO DE ENTRADA
+--------------------------------------------------------------------------------
+Resultado da análise inicial para BTCUSDT.
+
+DADOS:
+- ativo: BTCUSDT
+- preço_atual: 73869.6
+- decisão: AGUARDAR
+- direção: NONE
+- confiança: BAIXA
+- candle_4h: RED
+- candle_5m: RED
+- volume_5m: LOW
+- suporte_4h: 72603.5
+- resistência_4h: 77871.5
+- distância_suporte_%: 1.71
+- distância_resistência_%: 5.42
+- motivos: Cenário ainda sem confluência suficiente. | Preço pode estar longe de suporte/resistência ou sem candle favorável.
+- alertas: Não operar no meio do canal ou sem confirmação.
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:28 UTC] ANÁLISE DE ATIVO
+--------------------------------------------------------------------------------
+Iniciando análise de ETHUSDT.
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:29 UTC] DECISÃO DE ENTRADA
+--------------------------------------------------------------------------------
+Resultado da análise inicial para ETHUSDT.
+
+DADOS:
+- ativo: ETHUSDT
+- preço_atual: 2022.41
+- decisão: AGUARDAR
+- direção: NONE
+- confiança: BAIXA
+- candle_4h: RED
+- candle_5m: RED
+- volume_5m: LOW
+- suporte_4h: 1969.01
+- resistência_4h: 2139.34
+- distância_suporte_%: 2.68
+- distância_resistência_%: 5.74
+- motivos: Cenário ainda sem confluência suficiente. | Preço pode estar longe de suporte/resistência ou sem candle favorável.
+- alertas: Não operar no meio do canal ou sem confirmação.
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:29 UTC] TESTE DO MOTOR DE RISCO
+--------------------------------------------------------------------------------
+Validação educacional do Risk Engine com cenário padrão.
+
+DADOS:
+- status: PERMITIR_COM_CAUTELA
+- banca: 1000
+- risco_atual_%: 4.5
+- operações_abertas: 3
+- margem_%: 2.5
+- exposição_nominal: 500
+- motivos: Risco atual dentro da zona aceitável. | Margem planejada representa 2.50% da banca. | Alavancagem dentro do limite inicial/prudente. | Para Long, liquidação está abaixo da invalidação. Estruturalmente correto.
+- alertas: Ao abrir nova posição, passará para 4 operações. Não aumentar a mão.
+================================================================================
+
+
+================================================================================
+[2026-05-30 22:33:29 UTC] TESTE EDUCACIONAL 3X
+--------------------------------------------------------------------------------
+Validação inicial da lógica de alerta 3X. Nenhuma ordem será executada.
+
+DADOS:
+- status: 3X BLOQUEADO
+- candles_4h_contra: 8
+- motivos: Ainda não há candle verde favorável no 5M para defesa de Long.
+- alertas: 
+- regra_reduce_only: Após 3X, qualquer saída parcial ou total deve usar Reduce Only.
+================================================================================
+
+
+
+################################################################################
+RESUMO FINAL DO CICLO — ÁGUIA MASTER BOT
+################################################################################
+
+ATIVO: BTCUSDT
+PREÇO: 73869.6
+DECISÃO: AGUARDAR
+DIREÇÃO: NONE
+CONFIANÇA: BAIXA
+CANDLE 4H: RED
+CANDLE 5M: RED
+VOLUME 5M: LOW
+SUPORTE 4H: 72603.5
+RESISTÊNCIA 4H: 77871.5
+DISTÂNCIA DO SUPORTE: 1.71%
+DISTÂNCIA DA RESISTÊNCIA: 5.42%
+MOTIVOS: Cenário ainda sem confluência suficiente. | Preço pode estar longe de suporte/resistência ou sem candle favorável.
+ALERTAS: Não operar no meio do canal ou sem confirmação.
+
+ATIVO: ETHUSDT
+PREÇO: 2022.41
+DECISÃO: AGUARDAR
+DIREÇÃO: NONE
+CONFIANÇA: BAIXA
+CANDLE 4H: RED
+CANDLE 5M: RED
+VOLUME 5M: LOW
+SUPORTE 4H: 1969.01
+RESISTÊNCIA 4H: 2139.34
+DISTÂNCIA DO SUPORTE: 2.68%
+DISTÂNCIA DA RESISTÊNCIA: 5.74%
+MOTIVOS: Cenário ainda sem confluência suficiente. | Preço pode estar longe de suporte/resistência ou sem candle favorável.
+ALERTAS: Não operar no meio do canal ou sem confirmação.
+
+RISCO EDUCACIONAL:
+STATUS: PERMITIR_COM_CAUTELA
+MOTIVOS: Risco atual dentro da zona aceitável. | Margem planejada representa 2.50% da banca. | Alavancagem dentro do limite inicial/prudente. | Para Long, liquidação está abaixo da invalidação. Estruturalmente correto.
+ALERTAS: Ao abrir nova posição, passará para 4 operações. Não aumentar a mão.
+
+3X EDUCACIONAL:
+STATUS: 3X BLOQUEADO
+MOTIVOS: Ainda não há candle verde favorável no 5M para defesa de Long.
+ALERTAS: 
+REDUCE ONLY: Após 3X, qualquer saída parcial ou total deve usar Reduce Only.
+
+AÇÃO DO ROBÔ:
+Nenhuma ordem executada. Modo observador ativo.
+################################################################################
+
+
+================================================================================
+[2026-05-30 22:33:29 UTC] FIM DO CICLO
+--------------------------------------------------------------------------------
+Ciclo de observação concluído. Nenhuma ordem foi executada.
+================================================================================
+
