@@ -24,21 +24,36 @@ from risk_engine import evaluate_account_risk
 from logger import log_event
 
 
-def get_symbols_to_analyze() -> list[str]:
+MIN_SYMBOLS_REQUIRED = 5
+
+
+def get_symbols_to_analyze() -> tuple[list[str], str]:
     """
     Define quais ativos serão analisados no ciclo.
 
     Prioriza seleção automática por volume.
-    Se falhar, usa lista fixa de segurança.
+    Se a Binance Testnet retornar poucos ativos, usa lista fallback.
     """
+
     if not USE_AUTO_SYMBOL_SELECTION:
-        return FALLBACK_SYMBOLS
+        return FALLBACK_SYMBOLS, "FALLBACK_MANUAL"
 
     try:
         symbols = get_top_usdt_symbols(limit=MAX_AUTO_SYMBOLS)
 
-        if symbols:
-            return symbols
+        if symbols and len(symbols) >= MIN_SYMBOLS_REQUIRED:
+            return symbols, "AUTO_VOLUME"
+
+        log_event(
+            "SELEÇÃO AUTOMÁTICA INSUFICIENTE",
+            "A Binance Testnet retornou poucos ativos com volume. Usando lista fallback.",
+            {
+                "ativos_retornados": ", ".join(symbols) if symbols else "nenhum",
+                "quantidade_retornada": len(symbols) if symbols else 0,
+                "mínimo_exigido": MIN_SYMBOLS_REQUIRED,
+                "fallback": ", ".join(FALLBACK_SYMBOLS),
+            },
+        )
 
     except Exception as error:
         log_event(
@@ -50,7 +65,7 @@ def get_symbols_to_analyze() -> list[str]:
             },
         )
 
-    return FALLBACK_SYMBOLS
+    return FALLBACK_SYMBOLS, "FALLBACK_AFTER_AUTO_FAIL"
 
 
 def analyze_symbol(symbol: str, btc_context: dict | None = None) -> dict:
@@ -82,14 +97,14 @@ def analyze_symbol(symbol: str, btc_context: dict | None = None) -> dict:
 def build_observer_report() -> dict:
     """
     Executa o ciclo observador e retorna um relatório estruturado.
-    Esta função é usada pela API /run e /dashboard.
+    Esta função é usada pela API /run-json e /dashboard.
 
     Nenhuma ordem é executada.
     """
 
     cycle_results = []
 
-    symbols_to_analyze = get_symbols_to_analyze()
+    symbols_to_analyze, selection_mode = get_symbols_to_analyze()
 
     btc_symbol = "BTCUSDT"
 
@@ -185,6 +200,11 @@ def build_observer_report() -> dict:
         candles_4h_against=8,
     )
 
+    long_count = sum(1 for item in cycle_results if "LONG" in item["decision"])
+    short_count = sum(1 for item in cycle_results if "SHORT" in item["decision"])
+    wait_count = sum(1 for item in cycle_results if item["decision"] == "AGUARDAR")
+    error_count = sum(1 for item in cycle_results if item["decision"] == "ERRO")
+
     return {
         "status": "success",
         "bot": "ÁGUIA MASTER BOT",
@@ -194,8 +214,16 @@ def build_observer_report() -> dict:
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "symbol_selection": {
             "automatic": USE_AUTO_SYMBOL_SELECTION,
+            "selection_mode": selection_mode,
             "max_symbols": MAX_AUTO_SYMBOLS,
             "symbols_analyzed": symbols_to_analyze,
+            "symbols_count": len(symbols_to_analyze),
+        },
+        "cycle_summary": {
+            "possible_longs": long_count,
+            "possible_shorts": short_count,
+            "waiting": wait_count,
+            "errors": error_count,
         },
         "btc_context": btc_summary,
         "summary": cycle_results,
@@ -272,6 +300,14 @@ def run_observer() -> dict:
         log_event(
             "FIM DO CICLO",
             "Ciclo de observação concluído. Nenhuma ordem foi executada.",
+            {
+                "modo_seleção": report["symbol_selection"]["selection_mode"],
+                "ativos_analisados": ", ".join(report["symbol_selection"]["symbols_analyzed"]),
+                "possíveis_longs": report["cycle_summary"]["possible_longs"],
+                "possíveis_shorts": report["cycle_summary"]["possible_shorts"],
+                "aguardando": report["cycle_summary"]["waiting"],
+                "erros": report["cycle_summary"]["errors"],
+            },
         )
 
         return report
