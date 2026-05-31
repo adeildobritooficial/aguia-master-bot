@@ -24,6 +24,7 @@ from exchange_binance import (
 from market_analyzer import analyze_market_structure
 from strategy_mec import evaluate_entry, evaluate_3x_scenario
 from risk_engine import evaluate_account_risk
+from opportunity_scorer import rank_opportunities
 from logger import log_event
 
 
@@ -184,6 +185,11 @@ def build_observer_report() -> dict:
                 }
             )
 
+    ranked_opportunities = rank_opportunities(
+        summary=cycle_results,
+        btc_context=btc_summary,
+    )
+
     risk_test = evaluate_account_risk(
         balance_usdt=1000,
         current_risk_percent=4.5,
@@ -234,6 +240,8 @@ def build_observer_report() -> dict:
         },
         "btc_context": btc_summary,
         "summary": cycle_results,
+        "ranking": ranked_opportunities,
+        "top_opportunities": ranked_opportunities[:5],
         "risk": {
             "status": risk_test["status"],
             "balance_usdt": risk_test["balance_usdt"],
@@ -304,6 +312,15 @@ def run_observer() -> dict:
                     "alertas": " | ".join(item["warnings"]),
                 },
             )
+
+        log_event(
+            "RANKING DE OPORTUNIDADES",
+            "Top oportunidades ranqueadas por score técnico.",
+            {
+                item["symbol"]: f"{item['classification']} | Score {item['score']}"
+                for item in report["top_opportunities"]
+            },
+        )
 
         log_event(
             "FIM DO CICLO",

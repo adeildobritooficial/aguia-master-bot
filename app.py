@@ -9,7 +9,7 @@ from main import run_observer
 app = FastAPI(
     title="ÁGUIA MASTER BOT",
     description="Robô observador do Método Águia Cripto em modo seguro.",
-    version="1.2.0",
+    version="1.3.0",
 )
 
 
@@ -44,26 +44,16 @@ def status():
 
 @app.get("/run")
 def run_bot():
-    """
-    Mantém compatibilidade com a rota antiga.
-    Agora retorna o relatório completo.
-    """
     return run_observer()
 
 
 @app.get("/run-json")
 def run_json():
-    """
-    Rota técnica para obter o relatório completo em JSON.
-    """
     return run_observer()
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    """
-    Painel visual simples do ÁGUIA MASTER BOT.
-    """
     report = run_observer()
 
     if report.get("status") != "success":
@@ -82,22 +72,65 @@ def dashboard():
         </html>
         """
 
+    def badge_color(text: str) -> str:
+        if "FORTE" in text or "LONG" in text:
+            return "#16a34a"
+        if "SHORT" in text:
+            return "#dc2626"
+        if "AGUARDAR" in text or "CONFIRMAÇÃO" in text:
+            return "#f59e0b"
+        return "#6b7280"
+
+    ranking_html = ""
+
+    for index, item in enumerate(report.get("top_opportunities", []), start=1):
+        color = badge_color(item["classification"])
+
+        positives = "".join([f"<li>{p}</li>" for p in item["positives"][:3]])
+        negatives = "".join([f"<li>{n}</li>" for n in item["negatives"][:3]])
+
+        ranking_html += f"""
+        <div style="background:#1f2937; border-radius:16px; padding:18px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                <h3 style="margin:0;">#{index} {item["symbol"]}</h3>
+                <span style="background:{color}; color:white; padding:7px 12px; border-radius:999px; font-weight:bold;">
+                    {item["classification"]}
+                </span>
+            </div>
+            <p>Score técnico: <strong>{item["score"]}/100</strong></p>
+            <p>Decisão: <strong>{item["decision"]}</strong> | Direção: <strong>{item["direction"]}</strong> | Confiança: <strong>{item["confidence"]}</strong></p>
+            <h4 style="color:#93c5fd;">Pontos positivos</h4>
+            <ul>{positives}</ul>
+            <h4 style="color:#fca5a5;">Pontos de atenção</h4>
+            <ul>{negatives}</ul>
+        </div>
+        """
+
     cards_html = ""
 
     for item in report["summary"]:
         decision = item["decision"]
-
-        if "LONG" in decision:
-            color = "#16a34a"
-        elif "SHORT" in decision:
-            color = "#dc2626"
-        elif "AGUARDAR" in decision:
-            color = "#f59e0b"
-        else:
-            color = "#6b7280"
+        color = badge_color(decision)
 
         reasons = "".join([f"<li>{reason}</li>" for reason in item["reasons"]])
         warnings = "".join([f"<li>{warning}</li>" for warning in item["warnings"]])
+
+        ranking_item = next(
+            (r for r in report["ranking"] if r["symbol"] == item["symbol"]),
+            None,
+        )
+
+        score_html = ""
+
+        if ranking_item:
+            score_html = f"""
+            <div style="background:#111827; padding:12px; border-radius:10px;">
+                Score: <strong>{ranking_item["score"]}/100</strong>
+            </div>
+            <div style="background:#111827; padding:12px; border-radius:10px;">
+                Classe: <strong>{ranking_item["classification"]}</strong>
+            </div>
+            """
 
         cards_html += f"""
         <div style="background:#1f2937; border-radius:16px; padding:22px; margin-bottom:20px; box-shadow:0 8px 20px rgba(0,0,0,0.25);">
@@ -113,6 +146,7 @@ def dashboard():
             </p>
 
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-top:15px;">
+                {score_html}
                 <div style="background:#111827; padding:12px; border-radius:10px;">Direção: <strong>{item["direction"]}</strong></div>
                 <div style="background:#111827; padding:12px; border-radius:10px;">Confiança: <strong>{item["confidence"]}</strong></div>
                 <div style="background:#111827; padding:12px; border-radius:10px;">Candle 4H: <strong>{item["candle_4h"]}</strong></div>
@@ -135,6 +169,8 @@ def dashboard():
     risk = report["risk"]
     x3 = report["x3"]
     btc = report["btc_context"]
+    selection = report["symbol_selection"]
+    cycle = report["cycle_summary"]
 
     html = f"""
     <html>
@@ -157,6 +193,18 @@ def dashboard():
                 </header>
 
                 <div style="background:#1e293b; border-radius:16px; padding:22px; margin-bottom:25px;">
+                    <h2>Resumo do Ciclo</h2>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+                        <div style="background:#111827; padding:12px; border-radius:10px;">Modo seleção: <strong>{selection["selection_mode"]}</strong></div>
+                        <div style="background:#111827; padding:12px; border-radius:10px;">Lista branca: <strong>{selection["whitelist_enabled"]}</strong></div>
+                        <div style="background:#111827; padding:12px; border-radius:10px;">Ativos analisados: <strong>{selection["symbols_count"]}</strong></div>
+                        <div style="background:#111827; padding:12px; border-radius:10px;">Possíveis Longs: <strong>{cycle["possible_longs"]}</strong></div>
+                        <div style="background:#111827; padding:12px; border-radius:10px;">Possíveis Shorts: <strong>{cycle["possible_shorts"]}</strong></div>
+                        <div style="background:#111827; padding:12px; border-radius:10px;">Aguardando: <strong>{cycle["waiting"]}</strong></div>
+                    </div>
+                </div>
+
+                <div style="background:#1e293b; border-radius:16px; padding:22px; margin-bottom:25px;">
                     <h2>Contexto BTC</h2>
                     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
                         <div style="background:#111827; padding:12px; border-radius:10px;">Preço: <strong>{btc["price"]}</strong></div>
@@ -167,6 +215,9 @@ def dashboard():
                         <div style="background:#111827; padding:12px; border-radius:10px;">Perto Resistência 4H: <strong>{btc["near_resistance_4h"]}</strong></div>
                     </div>
                 </div>
+
+                <h2>Top Oportunidades do Ciclo</h2>
+                {ranking_html}
 
                 <h2 style="margin-top:30px;">Análise dos Ativos</h2>
                 {cards_html}
@@ -195,7 +246,7 @@ def dashboard():
                     <p>Segurança: nenhuma API Key usada, nenhuma ordem real, nenhuma ordem testnet.</p>
                     <p>Modo atual: OBSERVER.</p>
                     <p>
-                        Links: 
+                        Links:
                         <a href="/status" style="color:#93c5fd;">Status</a> |
                         <a href="/run-json" style="color:#93c5fd;">Run JSON</a> |
                         <a href="/dashboard" style="color:#93c5fd;">Atualizar Dashboard</a>
