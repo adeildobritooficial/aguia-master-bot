@@ -8,7 +8,7 @@ from main import run_observer
 app = FastAPI(
     title="ÁGUIA MASTER BOT",
     description="Robô observador do Método Águia Cripto em modo seguro.",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 
@@ -38,19 +38,4 @@ def status():
 
 @app.get("/run")
 def run_bot():
-    try:
-        run_observer()
-        return {
-            "status": "success",
-            "message": "Ciclo do robô observador executado com sucesso.",
-            "orders_executed": False,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-    except Exception as error:
-        return {
-            "status": "error",
-            "message": "O robô encontrou um erro e não executou nenhuma ordem.",
-            "error": str(error),
-            "orders_executed": False,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
+    return run_observer()
