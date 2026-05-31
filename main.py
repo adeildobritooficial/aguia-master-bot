@@ -3,18 +3,54 @@
 from datetime import datetime
 
 from config import (
-    SYMBOLS,
+    FALLBACK_SYMBOLS,
+    USE_AUTO_SYMBOL_SELECTION,
+    MAX_AUTO_SYMBOLS,
     TIMEFRAME_4H,
     TIMEFRAME_5M,
     LIMIT_4H,
     LIMIT_5M,
 )
 
-from exchange_binance import get_klines, get_current_price
+from exchange_binance import (
+    get_klines,
+    get_current_price,
+    get_top_usdt_symbols,
+)
+
 from market_analyzer import analyze_market_structure
 from strategy_mec import evaluate_entry, evaluate_3x_scenario
 from risk_engine import evaluate_account_risk
 from logger import log_event
+
+
+def get_symbols_to_analyze() -> list[str]:
+    """
+    Define quais ativos serão analisados no ciclo.
+
+    Prioriza seleção automática por volume.
+    Se falhar, usa lista fixa de segurança.
+    """
+    if not USE_AUTO_SYMBOL_SELECTION:
+        return FALLBACK_SYMBOLS
+
+    try:
+        symbols = get_top_usdt_symbols(limit=MAX_AUTO_SYMBOLS)
+
+        if symbols:
+            return symbols
+
+    except Exception as error:
+        log_event(
+            "FALHA NA SELEÇÃO AUTOMÁTICA DE ATIVOS",
+            "Não foi possível buscar ativos por volume. Usando lista fallback.",
+            {
+                "erro": str(error),
+                "fallback": ", ".join(FALLBACK_SYMBOLS),
+            },
+        )
+
+    return FALLBACK_SYMBOLS
 
 
 def analyze_symbol(symbol: str, btc_context: dict | None = None) -> dict:
@@ -46,11 +82,14 @@ def analyze_symbol(symbol: str, btc_context: dict | None = None) -> dict:
 def build_observer_report() -> dict:
     """
     Executa o ciclo observador e retorna um relatório estruturado.
-    Esta função é usada pela API /run.
+    Esta função é usada pela API /run e /dashboard.
+
     Nenhuma ordem é executada.
     """
 
     cycle_results = []
+
+    symbols_to_analyze = get_symbols_to_analyze()
 
     btc_symbol = "BTCUSDT"
 
@@ -71,33 +110,59 @@ def build_observer_report() -> dict:
         "near_resistance_4h": btc_context["near_resistance"],
     }
 
-    for symbol in SYMBOLS:
-        result = analyze_symbol(
-            symbol=symbol,
-            btc_context=btc_context,
-        )
+    for symbol in symbols_to_analyze:
+        try:
+            result = analyze_symbol(
+                symbol=symbol,
+                btc_context=btc_context,
+            )
 
-        decision = result["entry_decision"]
-        market_data = result["market_data"]
+            decision = result["entry_decision"]
+            market_data = result["market_data"]
 
-        cycle_results.append(
-            {
-                "symbol": symbol,
-                "price": result["current_price"],
-                "decision": decision["decision"],
-                "direction": decision["direction"],
-                "confidence": decision["confidence"],
-                "candle_4h": market_data["last_4h_candle"]["direction"],
-                "candle_5m": market_data["last_5m_candle"]["direction"],
-                "volume_5m": market_data["volume_5m"]["status"],
-                "support_4h": decision["support"],
-                "resistance_4h": decision["resistance"],
-                "distance_to_support_percent": decision["distance_to_support_percent"],
-                "distance_to_resistance_percent": decision["distance_to_resistance_percent"],
-                "reasons": decision["reasons"],
-                "warnings": decision["warnings"],
-            }
-        )
+            cycle_results.append(
+                {
+                    "symbol": symbol,
+                    "price": result["current_price"],
+                    "decision": decision["decision"],
+                    "direction": decision["direction"],
+                    "confidence": decision["confidence"],
+                    "candle_4h": market_data["last_4h_candle"]["direction"],
+                    "candle_5m": market_data["last_5m_candle"]["direction"],
+                    "volume_5m": market_data["volume_5m"]["status"],
+                    "support_4h": decision["support"],
+                    "resistance_4h": decision["resistance"],
+                    "distance_to_support_percent": decision["distance_to_support_percent"],
+                    "distance_to_resistance_percent": decision["distance_to_resistance_percent"],
+                    "reasons": decision["reasons"],
+                    "warnings": decision["warnings"],
+                }
+            )
+
+        except Exception as error:
+            cycle_results.append(
+                {
+                    "symbol": symbol,
+                    "price": None,
+                    "decision": "ERRO",
+                    "direction": "NONE",
+                    "confidence": "BAIXA",
+                    "candle_4h": "N/A",
+                    "candle_5m": "N/A",
+                    "volume_5m": "N/A",
+                    "support_4h": None,
+                    "resistance_4h": None,
+                    "distance_to_support_percent": None,
+                    "distance_to_resistance_percent": None,
+                    "reasons": [
+                        "Erro ao analisar este ativo.",
+                        str(error),
+                    ],
+                    "warnings": [
+                        "Ativo ignorado neste ciclo.",
+                    ],
+                }
+            )
 
     risk_test = evaluate_account_risk(
         balance_usdt=1000,
@@ -127,6 +192,11 @@ def build_observer_report() -> dict:
         "environment": "BINANCE FUTURES TESTNET / PUBLIC DATA",
         "orders_executed": False,
         "timestamp": datetime.utcnow().isoformat() + "Z",
+        "symbol_selection": {
+            "automatic": USE_AUTO_SYMBOL_SELECTION,
+            "max_symbols": MAX_AUTO_SYMBOLS,
+            "symbols_analyzed": symbols_to_analyze,
+        },
         "btc_context": btc_summary,
         "summary": cycle_results,
         "risk": {
@@ -147,6 +217,7 @@ def build_observer_report() -> dict:
             "reasons": x3_test["reasons"],
             "warnings": x3_test["warnings"],
             "reduce_only_rule": x3_test["reduce_only_rule"],
+            "note": "Este 3X é apenas teste educacional. Não representa posição real aberta.",
         },
         "safety": {
             "api_keys_used": False,
@@ -168,7 +239,8 @@ def run_observer() -> dict:
         {
             "modo": "OBSERVER",
             "ambiente": "PUBLIC_MARKET_DATA / BINANCE FUTURES TESTNET",
-            "ativos": ", ".join(SYMBOLS),
+            "seleção_de_ativos": "AUTOMÁTICA" if USE_AUTO_SYMBOL_SELECTION else "FALLBACK",
+            "máximo_de_ativos": MAX_AUTO_SYMBOLS,
         },
     )
 
