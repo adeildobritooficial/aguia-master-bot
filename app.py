@@ -172,6 +172,40 @@ def dashboard():
     selection = report["symbol_selection"]
     cycle = report["cycle_summary"]
 
+        top_opportunities = report.get("top_opportunities", [])
+
+    best = top_opportunities[0] if top_opportunities else None
+
+    if not best:
+        general_status = "AGUARDAR"
+        general_color = "#f59e0b"
+        general_reason = "Nenhum ativo foi ranqueado neste ciclo."
+        general_action = "Não operar agora. Aguardar nova leitura do mercado."
+
+    elif best["classification"] == "OPORTUNIDADE FORTE":
+        general_status = "OPORTUNIDADE FORTE"
+        general_color = "#16a34a"
+        general_reason = f"Melhor ativo do ciclo: {best['symbol']} com score {best['score']}/100."
+        general_action = "Analisar manualmente antes de qualquer execução. Ainda não executar ordem automática."
+
+    elif best["classification"] == "POSSÍVEL OPERAÇÃO":
+        general_status = "POSSÍVEL OPERAÇÃO"
+        general_color = "#22c55e"
+        general_reason = f"Existe possível setup em {best['symbol']}, mas ainda exige confirmação fina."
+        general_action = "Aguardar confirmação de candle, volume, BTC e região antes de qualquer entrada."
+
+    elif best["classification"] == "AGUARDAR CONFIRMAÇÃO":
+        general_status = "AGUARDAR CONFIRMAÇÃO"
+        general_color = "#f59e0b"
+        general_reason = f"Melhor ativo atual: {best['symbol']}, mas sem confluência suficiente."
+        general_action = "Não entrar agora. Aguardar novo ciclo com confirmação técnica."
+
+    else:
+        general_status = "NÃO OPERAR"
+        general_color = "#dc2626"
+        general_reason = "Nenhuma oportunidade operacional forte encontrada neste ciclo."
+        general_action = "Preservar capital. Não operar no meio do canal, sem direção ou sem volume."
+
     html = f"""
     <html>
         <head>
@@ -202,6 +236,28 @@ def dashboard():
                         <div style="background:#111827; padding:12px; border-radius:10px;">Possíveis Shorts: <strong>{cycle["possible_shorts"]}</strong></div>
                         <div style="background:#111827; padding:12px; border-radius:10px;">Aguardando: <strong>{cycle["waiting"]}</strong></div>
                     </div>
+                </div>
+
+                                <div style="background:#1e293b; border-radius:16px; padding:22px; margin-bottom:25px; border-left:6px solid {general_color};">
+                    <h2>Decisão Geral do Ciclo</h2>
+
+                    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:15px;">
+                        <span style="background:{general_color}; color:white; padding:10px 16px; border-radius:999px; font-weight:bold; font-size:18px;">
+                            {general_status}
+                        </span>
+                    </div>
+
+                    <p style="font-size:18px; color:#e5e7eb;">
+                        <strong>Motivo:</strong> {general_reason}
+                    </p>
+
+                    <p style="font-size:18px; color:#fcd34d;">
+                        <strong>Ação recomendada:</strong> {general_action}
+                    </p>
+
+                    <p style="color:#94a3b8;">
+                        Regra de segurança: este robô ainda está em modo observador. Nenhuma ordem real ou testnet é executada automaticamente.
+                    </p>
                 </div>
 
                 <div style="background:#1e293b; border-radius:16px; padding:22px; margin-bottom:25px;">
