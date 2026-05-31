@@ -4,8 +4,11 @@ from datetime import datetime
 
 from config import (
     FALLBACK_SYMBOLS,
+    OPERATIONAL_WHITELIST,
+    USE_OPERATIONAL_WHITELIST,
     USE_AUTO_SYMBOL_SELECTION,
     MAX_AUTO_SYMBOLS,
+    MIN_SYMBOLS_REQUIRED,
     TIMEFRAME_4H,
     TIMEFRAME_5M,
     LIMIT_4H,
@@ -24,29 +27,31 @@ from risk_engine import evaluate_account_risk
 from logger import log_event
 
 
-MIN_SYMBOLS_REQUIRED = 5
-
-
 def get_symbols_to_analyze() -> tuple[list[str], str]:
     """
     Define quais ativos serão analisados no ciclo.
 
     Prioriza seleção automática por volume.
-    Se a Binance Testnet retornar poucos ativos, usa lista fallback.
+    Filtra por lista branca operacional.
+    Se a Binance Testnet retornar poucos ativos bons, usa fallback.
     """
 
     if not USE_AUTO_SYMBOL_SELECTION:
         return FALLBACK_SYMBOLS, "FALLBACK_MANUAL"
 
     try:
-        symbols = get_top_usdt_symbols(limit=MAX_AUTO_SYMBOLS)
+        symbols = get_top_usdt_symbols(
+            limit=MAX_AUTO_SYMBOLS,
+            whitelist=OPERATIONAL_WHITELIST,
+            use_whitelist=USE_OPERATIONAL_WHITELIST,
+        )
 
         if symbols and len(symbols) >= MIN_SYMBOLS_REQUIRED:
-            return symbols, "AUTO_VOLUME"
+            return symbols, "AUTO_VOLUME_WITH_WHITELIST"
 
         log_event(
             "SELEÇÃO AUTOMÁTICA INSUFICIENTE",
-            "A Binance Testnet retornou poucos ativos com volume. Usando lista fallback.",
+            "A Binance Testnet retornou poucos ativos operacionais com volume. Usando lista fallback.",
             {
                 "ativos_retornados": ", ".join(symbols) if symbols else "nenhum",
                 "quantidade_retornada": len(symbols) if symbols else 0,
@@ -214,8 +219,10 @@ def build_observer_report() -> dict:
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "symbol_selection": {
             "automatic": USE_AUTO_SYMBOL_SELECTION,
+            "whitelist_enabled": USE_OPERATIONAL_WHITELIST,
             "selection_mode": selection_mode,
             "max_symbols": MAX_AUTO_SYMBOLS,
+            "min_symbols_required": MIN_SYMBOLS_REQUIRED,
             "symbols_analyzed": symbols_to_analyze,
             "symbols_count": len(symbols_to_analyze),
         },
@@ -268,6 +275,7 @@ def run_observer() -> dict:
             "modo": "OBSERVER",
             "ambiente": "PUBLIC_MARKET_DATA / BINANCE FUTURES TESTNET",
             "seleção_de_ativos": "AUTOMÁTICA" if USE_AUTO_SYMBOL_SELECTION else "FALLBACK",
+            "lista_branca": "ATIVA" if USE_OPERATIONAL_WHITELIST else "DESATIVADA",
             "máximo_de_ativos": MAX_AUTO_SYMBOLS,
         },
     )

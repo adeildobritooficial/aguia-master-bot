@@ -79,12 +79,18 @@ def get_current_price(symbol: str) -> float:
     return float(data["price"])
 
 
-def get_top_usdt_symbols(limit: int = 10) -> list[str]:
+def get_top_usdt_symbols(
+    limit: int = 10,
+    whitelist: list[str] | None = None,
+    use_whitelist: bool = True,
+) -> list[str]:
     """
     Busca automaticamente os principais pares USDT Futures por volume.
 
     Nesta fase usa dados públicos da Binance Futures Testnet.
-    Se falhar, o main.py usa FALLBACK_SYMBOLS.
+
+    Se use_whitelist=True, o robô só aceita símbolos presentes
+    na lista branca operacional.
     """
     url = f"{BINANCE_PUBLIC_BASE_URL}/fapi/v1/ticker/24hr"
 
@@ -100,6 +106,8 @@ def get_top_usdt_symbols(limit: int = 10) -> list[str]:
         "FDUSD",
     ]
 
+    whitelist_set = set(whitelist or [])
+
     candidates = []
 
     for item in data:
@@ -109,6 +117,9 @@ def get_top_usdt_symbols(limit: int = 10) -> list[str]:
             continue
 
         if any(blocked in symbol for blocked in blocked_keywords):
+            continue
+
+        if use_whitelist and whitelist_set and symbol not in whitelist_set:
             continue
 
         try:
@@ -134,8 +145,13 @@ def get_top_usdt_symbols(limit: int = 10) -> list[str]:
 
     top_symbols = [item["symbol"] for item in candidates[:limit]]
 
-    # Garantir BTC e ETH sempre na análise
-    for required in ["ETHUSDT", "BTCUSDT"]:
+    # Garantir BTC e ETH sempre na análise, se estiverem disponíveis na whitelist
+    required_symbols = ["BTCUSDT", "ETHUSDT"]
+
+    for required in reversed(required_symbols):
+        if use_whitelist and whitelist_set and required not in whitelist_set:
+            continue
+
         if required not in top_symbols:
             top_symbols.insert(0, required)
 

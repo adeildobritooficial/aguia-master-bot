@@ -22,8 +22,51 @@ ENVIRONMENT = "BINANCE_FUTURES_TESTNET_PUBLIC_DATA"
 USE_AUTO_SYMBOL_SELECTION = True
 
 # Quantidade máxima de ativos que o robô vai analisar por ciclo
-# Começamos com 10 para não pesar no Render gratuito.
+# Para Render gratuito, 10 é um bom começo.
 MAX_AUTO_SYMBOLS = 10
+
+# Mínimo de ativos aceitos na seleção automática.
+# Se vier menos que isso, usa fallback.
+MIN_SYMBOLS_REQUIRED = 5
+
+# Ativar lista branca operacional
+# Isso impede o robô de analisar moedas estranhas da Testnet.
+USE_OPERATIONAL_WHITELIST = True
+
+# Lista branca de ativos com maior potencial operacional.
+# O robô só aceitará ativos que estejam aqui.
+OPERATIONAL_WHITELIST = [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "BNBUSDT",
+    "DOGEUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "DOTUSDT",
+    "TRXUSDT",
+    "NEARUSDT",
+    "APTUSDT",
+    "SUIUSDT",
+    "INJUSDT",
+    "AAVEUSDT",
+    "UNIUSDT",
+    "ETCUSDT",
+    "ATOMUSDT",
+    "FILUSDT",
+    "OPUSDT",
+    "ARBUSDT",
+    "SEIUSDT",
+    "TIAUSDT",
+    "WLDUSDT",
+    "FETUSDT",
+    "GALAUSDT",
+    "IMXUSDT",
+    "RUNEUSDT",
+]
 
 # Lista fixa de segurança caso a busca automática falhe
 FALLBACK_SYMBOLS = [
