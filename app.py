@@ -9,7 +9,7 @@ from main import run_observer
 app = FastAPI(
     title="ÁGUIA MASTER BOT",
     description="Robô observador do Método Águia Cripto em modo seguro.",
-    version="1.3.0",
+    version="1.4.0",
 )
 
 
@@ -73,21 +73,67 @@ def dashboard():
         """
 
     def badge_color(text: str) -> str:
-        if "FORTE" in text or "LONG" in text:
+        if "OPORTUNIDADE FORTE" in text:
+            return "#16a34a"
+        if "POSSÍVEL OPERAÇÃO" in text:
+            return "#22c55e"
+        if "LONG" in text:
             return "#16a34a"
         if "SHORT" in text:
             return "#dc2626"
         if "AGUARDAR" in text or "CONFIRMAÇÃO" in text:
             return "#f59e0b"
+        if "REJEITAR" in text or "SEM SETUP" in text or "NÃO OPERAR" in text:
+            return "#dc2626"
         return "#6b7280"
+
+    btc = report["btc_context"]
+    selection = report["symbol_selection"]
+    cycle = report["cycle_summary"]
+    risk = report["risk"]
+    x3 = report["x3"]
+
+    top_opportunities = report.get("top_opportunities", [])
+    best = top_opportunities[0] if top_opportunities else None
+
+    if not best:
+        general_status = "AGUARDAR"
+        general_color = "#f59e0b"
+        general_reason = "Nenhum ativo foi ranqueado neste ciclo."
+        general_action = "Não operar agora. Aguardar nova leitura do mercado."
+
+    elif best["classification"] == "OPORTUNIDADE FORTE":
+        general_status = "OPORTUNIDADE FORTE"
+        general_color = "#16a34a"
+        general_reason = f"Melhor ativo do ciclo: {best['symbol']} com score {best['score']}/100."
+        general_action = "Analisar manualmente antes de qualquer execução. Ainda não executar ordem automática."
+
+    elif best["classification"] == "POSSÍVEL OPERAÇÃO":
+        general_status = "POSSÍVEL OPERAÇÃO"
+        general_color = "#22c55e"
+        general_reason = f"Existe possível setup em {best['symbol']}, mas ainda exige confirmação fina."
+        general_action = "Aguardar confirmação de candle, volume, BTC e região antes de qualquer entrada."
+
+    elif best["classification"] == "AGUARDAR CONFIRMAÇÃO":
+        general_status = "AGUARDAR CONFIRMAÇÃO"
+        general_color = "#f59e0b"
+        general_reason = f"Melhor ativo atual: {best['symbol']}, mas sem confluência suficiente."
+        general_action = "Não entrar agora. Aguardar novo ciclo com confirmação técnica."
+
+    else:
+        general_status = "NÃO OPERAR"
+        general_color = "#dc2626"
+        general_reason = "Nenhuma oportunidade operacional forte encontrada neste ciclo."
+        general_action = "Preservar capital. Não operar no meio do canal, sem direção ou sem volume."
 
     ranking_html = ""
 
-    for index, item in enumerate(report.get("top_opportunities", []), start=1):
+    for index, item in enumerate(top_opportunities, start=1):
         color = badge_color(item["classification"])
 
-        positives = "".join([f"<li>{p}</li>" for p in item["positives"][:3]])
-        negatives = "".join([f"<li>{n}</li>" for n in item["negatives"][:3]])
+        positives = "".join([f"<li>{p}</li>" for p in item.get("positives", [])[:4]])
+        negatives = "".join([f"<li>{n}</li>" for n in item.get("negatives", [])[:4]])
+        hard_blocks = "".join([f"<li>{b}</li>" for b in item.get("hard_blocks", [])[:4]])
 
         ranking_html += f"""
         <div style="background:#1f2937; border-radius:16px; padding:18px; margin-bottom:14px;">
@@ -97,12 +143,22 @@ def dashboard():
                     {item["classification"]}
                 </span>
             </div>
+
             <p>Score técnico: <strong>{item["score"]}/100</strong></p>
-            <p>Decisão: <strong>{item["decision"]}</strong> | Direção: <strong>{item["direction"]}</strong> | Confiança: <strong>{item["confidence"]}</strong></p>
+            <p>
+                Decisão: <strong>{item["decision"]}</strong> |
+                Direção: <strong>{item["direction"]}</strong> |
+                Confiança: <strong>{item["confidence"]}</strong>
+            </p>
+
             <h4 style="color:#93c5fd;">Pontos positivos</h4>
-            <ul>{positives}</ul>
+            <ul>{positives if positives else "<li>Nenhum ponto positivo relevante neste ciclo.</li>"}</ul>
+
             <h4 style="color:#fca5a5;">Pontos de atenção</h4>
-            <ul>{negatives}</ul>
+            <ul>{negatives if negatives else "<li>Nenhum alerta relevante registrado.</li>"}</ul>
+
+            <h4 style="color:#fcd34d;">Travas de segurança</h4>
+            <ul>{hard_blocks if hard_blocks else "<li>Nenhuma trava crítica registrada.</li>"}</ul>
         </div>
         """
 
@@ -112,8 +168,8 @@ def dashboard():
         decision = item["decision"]
         color = badge_color(decision)
 
-        reasons = "".join([f"<li>{reason}</li>" for reason in item["reasons"]])
-        warnings = "".join([f"<li>{warning}</li>" for warning in item["warnings"]])
+        reasons = "".join([f"<li>{reason}</li>" for reason in item.get("reasons", [])])
+        warnings = "".join([f"<li>{warning}</li>" for warning in item.get("warnings", [])])
 
         ranking_item = next(
             (r for r in report["ranking"] if r["symbol"] == item["symbol"]),
@@ -159,52 +215,12 @@ def dashboard():
             </div>
 
             <h3 style="color:#93c5fd;">Motivos</h3>
-            <ul>{reasons}</ul>
+            <ul>{reasons if reasons else "<li>Sem motivos registrados.</li>"}</ul>
 
             <h3 style="color:#fcd34d;">Alertas</h3>
-            <ul>{warnings}</ul>
+            <ul>{warnings if warnings else "<li>Sem alertas registrados.</li>"}</ul>
         </div>
         """
-
-    risk = report["risk"]
-    x3 = report["x3"]
-    btc = report["btc_context"]
-    selection = report["symbol_selection"]
-    cycle = report["cycle_summary"]
-
-        top_opportunities = report.get("top_opportunities", [])
-
-    best = top_opportunities[0] if top_opportunities else None
-
-    if not best:
-        general_status = "AGUARDAR"
-        general_color = "#f59e0b"
-        general_reason = "Nenhum ativo foi ranqueado neste ciclo."
-        general_action = "Não operar agora. Aguardar nova leitura do mercado."
-
-    elif best["classification"] == "OPORTUNIDADE FORTE":
-        general_status = "OPORTUNIDADE FORTE"
-        general_color = "#16a34a"
-        general_reason = f"Melhor ativo do ciclo: {best['symbol']} com score {best['score']}/100."
-        general_action = "Analisar manualmente antes de qualquer execução. Ainda não executar ordem automática."
-
-    elif best["classification"] == "POSSÍVEL OPERAÇÃO":
-        general_status = "POSSÍVEL OPERAÇÃO"
-        general_color = "#22c55e"
-        general_reason = f"Existe possível setup em {best['symbol']}, mas ainda exige confirmação fina."
-        general_action = "Aguardar confirmação de candle, volume, BTC e região antes de qualquer entrada."
-
-    elif best["classification"] == "AGUARDAR CONFIRMAÇÃO":
-        general_status = "AGUARDAR CONFIRMAÇÃO"
-        general_color = "#f59e0b"
-        general_reason = f"Melhor ativo atual: {best['symbol']}, mas sem confluência suficiente."
-        general_action = "Não entrar agora. Aguardar novo ciclo com confirmação técnica."
-
-    else:
-        general_status = "NÃO OPERAR"
-        general_color = "#dc2626"
-        general_reason = "Nenhuma oportunidade operacional forte encontrada neste ciclo."
-        general_action = "Preservar capital. Não operar no meio do canal, sem direção ou sem volume."
 
     html = f"""
     <html>
@@ -238,7 +254,7 @@ def dashboard():
                     </div>
                 </div>
 
-                                <div style="background:#1e293b; border-radius:16px; padding:22px; margin-bottom:25px; border-left:6px solid {general_color};">
+                <div style="background:#1e293b; border-radius:16px; padding:22px; margin-bottom:25px; border-left:6px solid {general_color};">
                     <h2>Decisão Geral do Ciclo</h2>
 
                     <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:15px;">
