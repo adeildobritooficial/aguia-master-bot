@@ -1,49 +1,31 @@
 import os
 import time
-import math
-import statistics
 from datetime import datetime, timezone
 
 import requests
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, jsonify, render_template_string
 
 
 app = Flask(__name__)
 
 
-# ============================================================
-# ÁGUIA MASTER BOT
-# Modo: Observador Educacional
-# Ambiente: Binance Futures Testnet / Dados Públicos
-# Importante: este arquivo NÃO executa ordens.
-# ============================================================
-
-
 APP_NAME = "ÁGUIA MASTER BOT"
 APP_MODE = "OBSERVADOR EDUCACIONAL"
-VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 BINANCE_FUTURES_PUBLIC_BASE = "https://fapi.binance.com"
-BINANCE_FUTURES_TESTNET_BASE = "https://testnet.binancefuture.com"
+REQUEST_TIMEOUT = 10
 
-USE_TESTNET_PUBLIC = os.getenv("USE_TESTNET_PUBLIC", "false").lower() == "true"
-
-BASE_URL = BINANCE_FUTURES_TESTNET_BASE if USE_TESTNET_PUBLIC else BINANCE_FUTURES_PUBLIC_BASE
-
-
-# Lista branca operacional.
-# O robô só analisa ativos presentes aqui.
 WHITE_LIST = [
     "BTCUSDT",
     "ETHUSDT",
     "SOLUSDT",
     "BNBUSDT",
     "XRPUSDT",
-    "ADAUSDT",
     "DOGEUSDT",
+    "ADAUSDT",
     "AVAXUSDT",
     "LINKUSDT",
-    "MATICUSDT",
     "DOTUSDT",
     "LTCUSDT",
     "TRXUSDT",
@@ -54,20 +36,18 @@ WHITE_LIST = [
     "INJUSDT",
     "SUIUSDT",
     "ATOMUSDT",
+    "SEIUSDT",
+    "FILUSDT",
+    "WLDUSDT",
+    "GALAUSDT",
+    "UNIUSDT",
 ]
 
-
-MAX_SYMBOLS_BY_VOLUME = 12
-REQUEST_TIMEOUT = 8
+MAX_ASSETS_TO_ANALYZE = 10
 
 
-# ============================================================
-# Utilidades
-# ============================================================
-
-
-def now_utc_text():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+def now_utc():
+    return datetime.now(timezone.utc).isoformat()
 
 
 def safe_float(value, default=0.0):
@@ -79,52 +59,87 @@ def safe_float(value, default=0.0):
         return default
 
 
-def safe_percent(value):
+def safe_round(value, decimals=2):
     try:
-        return round(float(value), 2)
+        return round(float(value), decimals)
     except Exception:
-        return 0.0
+        return 0
+
+
+def format_money(value):
+    try:
+        value = float(value)
+        if value >= 1_000_000_000:
+            return f"{value / 1_000_000_000:.2f}B"
+        if value >= 1_000_000:
+            return f"{value / 1_000_000:.2f}M"
+        if value >= 1_000:
+            return f"{value / 1_000:.2f}K"
+        return f"{value:.2f}"
+    except Exception:
+        return "0"
 
 
 def format_price(value):
     try:
         value = float(value)
         if value >= 100:
-            return f"{value:,.2f}"
+            return f"{value:.2f}"
         if value >= 1:
-            return f"{value:,.4f}"
-        return f"{value:,.6f}"
+            return f"{value:.4f}"
+        return f"{value:.6f}"
     except Exception:
         return "N/A"
 
 
-def request_json(path, params=None):
-    url = f"{BASE_URL}{path}"
+def binance_get(path, params=None):
+    url = f"{BINANCE_FUTURES_PUBLIC_BASE}{path}"
+
     try:
         response = requests.get(url, params=params or {}, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except Exception as error:
-        print(f"[ERRO REQUEST] {url} -> {error}")
+        print(f"Erro ao consultar Binance: {url} | {error}")
         return None
 
 
-# ============================================================
-# Binance Dados Públicos
-# ============================================================
-
-
 def get_24h_tickers():
-    data = request_json("/fapi/v1/ticker/24hr")
-    if isinstance(data, list):
-        return data
-    return []
+    data = binance_get("/fapi/v1/ticker/24hr")
+
+    if not isinstance(data, list):
+        return []
+
+    tickers = []
+
+    for item in data:
+        symbol = item.get("symbol", "")
+
+        if symbol not in WHITE_LIST:
+            continue
+
+        quote_volume = safe_float(item.get("quoteVolume"))
+        last_price = safe_float(item.get("lastPrice"))
+        change_percent = safe_float(item.get("priceChangePercent"))
+
+        tickers.append(
+            {
+                "symbol": symbol,
+                "quote_volume": quote_volume,
+                "last_price": last_price,
+                "change_percent": change_percent,
+            }
+        )
+
+    tickers.sort(key=lambda x: x["quote_volume"], reverse=True)
+
+    return tickers[:MAX_ASSETS_TO_ANALYZE]
 
 
-def get_klines(symbol, interval="5m", limit=120):
-    data = request_json(
+def get_klines(symbol, interval, limit=120):
+    data = binance_get(
         "/fapi/v1/klines",
-        params={
+        {
             "symbol": symbol,
             "interval": interval,
             "limit": limit,
@@ -155,52 +170,68 @@ def get_klines(symbol, interval="5m", limit=120):
     return candles
 
 
-def get_symbols_by_volume():
-    tickers = get_24h_tickers()
-
-    filtered = []
-
-    for ticker in tickers:
-        symbol = ticker.get("symbol", "")
-
-        if symbol not in WHITE_LIST:
-            continue
-
-        quote_volume = safe_float(ticker.get("quoteVolume", 0))
-        price_change_percent = safe_float(ticker.get("priceChangePercent", 0))
-        last_price = safe_float(ticker.get("lastPrice", 0))
-
-        filtered.append(
-            {
-                "symbol": symbol,
-                "quote_volume": quote_volume,
-                "price_change_percent": price_change_percent,
-                "last_price": last_price,
-            }
-        )
-
-    filtered.sort(key=lambda x: x["quote_volume"], reverse=True)
-
-    return filtered[:MAX_SYMBOLS_BY_VOLUME]
-
-
-# ============================================================
-# Indicadores Técnicos Simples
-# ============================================================
-
-
-def calculate_sma(values, period):
-    if not values or len(values) < period:
+def sma(values, period):
+    if len(values) < period:
         return None
 
     return sum(values[-period:]) / period
 
 
-def calculate_support_resistance(candles, lookback=40):
+def candle_direction(candle):
+    if candle["close"] > candle["open"]:
+        return "GREEN"
+
+    if candle["close"] < candle["open"]:
+        return "RED"
+
+    return "DOJI"
+
+
+def analyze_trend(candles):
+    if len(candles) < 60:
+        return {
+            "status": "INDEFINIDA",
+            "description": "Poucos candles para definir tendência.",
+        }
+
+    closes = [c["close"] for c in candles]
+    last_close = closes[-1]
+
+    sma_20 = sma(closes, 20)
+    sma_50 = sma(closes, 50)
+
+    if sma_20 is None or sma_50 is None:
+        return {
+            "status": "INDEFINIDA",
+            "description": "Médias insuficientes.",
+        }
+
+    if last_close > sma_20 > sma_50:
+        return {
+            "status": "ALTA",
+            "description": "Preço acima das médias. Tendência favorece compra.",
+        }
+
+    if last_close < sma_20 < sma_50:
+        return {
+            "status": "BAIXA",
+            "description": "Preço abaixo das médias. Tendência favorece venda.",
+        }
+
+    return {
+        "status": "LATERAL",
+        "description": "Mercado sem direção clara. Exige paciência.",
+    }
+
+
+def analyze_levels(candles, lookback=50):
     if not candles:
         return {
-            "support": None,
-            "resistance": None,
+            "support": 0,
+            "resistance": 0,
+            "channel_position": "INDEFINIDA",
+            "distance_support_percent": 0,
+            "distance_resistance_percent": 0,
         }
 
     recent = candles[-lookback:] if len(candles) >= lookback else candles
@@ -208,170 +239,122 @@ def calculate_support_resistance(candles, lookback=40):
     lows = [c["low"] for c in recent]
     highs = [c["high"] for c in recent]
 
-    support = min(lows) if lows else None
-    resistance = max(highs) if highs else None
+    support = min(lows)
+    resistance = max(highs)
+    price = candles[-1]["close"]
+
+    channel_size = resistance - support
+
+    if channel_size <= 0:
+        channel_position = "INDEFINIDA"
+    else:
+        position = (price - support) / channel_size
+
+        if position <= 0.25:
+            channel_position = "PERTO DO SUPORTE"
+        elif position >= 0.75:
+            channel_position = "PERTO DA RESISTÊNCIA"
+        else:
+            channel_position = "MEIO DO CANAL"
+
+    if price > 0:
+        distance_support_percent = ((price - support) / price) * 100
+        distance_resistance_percent = ((resistance - price) / price) * 100
+    else:
+        distance_support_percent = 0
+        distance_resistance_percent = 0
 
     return {
         "support": support,
         "resistance": resistance,
+        "channel_position": channel_position,
+        "distance_support_percent": safe_round(distance_support_percent, 2),
+        "distance_resistance_percent": safe_round(distance_resistance_percent, 2),
     }
 
 
-def calculate_volume_context(candles, period=20):
-    if not candles or len(candles) < period + 1:
+def analyze_volume(candles, period=20):
+    if len(candles) < period + 1:
         return {
-            "current_volume": 0,
-            "average_volume": 0,
-            "volume_ratio": 0,
-            "status": "DADOS INSUFICIENTES",
+            "status": "INDEFINIDO",
+            "ratio": 0,
+            "description": "Volume insuficiente.",
         }
 
     current_volume = candles[-1]["volume"]
-    previous_volumes = [c["volume"] for c in candles[-period - 1 : -1]]
-    average_volume = sum(previous_volumes) / len(previous_volumes)
+    previous = [c["volume"] for c in candles[-period - 1 : -1]]
+    average = sum(previous) / len(previous)
 
-    if average_volume <= 0:
-        volume_ratio = 0
-    else:
-        volume_ratio = current_volume / average_volume
+    ratio = current_volume / average if average > 0 else 0
 
-    if volume_ratio >= 1.8:
-        status = "VOLUME FORTE"
-    elif volume_ratio >= 1.2:
-        status = "VOLUME MODERADO"
+    if ratio >= 1.8:
+        status = "FORTE"
+        description = "Volume acima da média. Existe participação do mercado."
+    elif ratio >= 1.2:
+        status = "MODERADO"
+        description = "Volume melhorando, mas ainda pede confirmação."
     else:
-        status = "VOLUME FRACO"
+        status = "FRACO"
+        description = "Volume fraco. Evitar forçar operação."
 
     return {
-        "current_volume": current_volume,
-        "average_volume": average_volume,
-        "volume_ratio": round(volume_ratio, 2),
         "status": status,
+        "ratio": safe_round(ratio, 2),
+        "description": description,
     }
 
 
-def analyze_last_candles(candles):
-    if not candles or len(candles) < 3:
+def analyze_candles(candles):
+    if len(candles) < 5:
         return {
-            "status": "DADOS INSUFICIENTES",
-            "bullish_count": 0,
-            "bearish_count": 0,
-            "last_candle_direction": "NEUTRO",
+            "status": "INDEFINIDO",
+            "last": "INDEFINIDO",
+            "green_count": 0,
+            "red_count": 0,
+            "rejection": "SEM LEITURA",
+            "description": "Poucos candles.",
         }
 
-    last_three = candles[-3:]
-    bullish_count = 0
-    bearish_count = 0
-
-    for candle in last_three:
-        if candle["close"] > candle["open"]:
-            bullish_count += 1
-        elif candle["close"] < candle["open"]:
-            bearish_count += 1
-
+    last_5 = candles[-5:]
+    last_3 = candles[-3:]
     last = candles[-1]
 
-    if last["close"] > last["open"]:
-        last_candle_direction = "ALTA"
-    elif last["close"] < last["open"]:
-        last_candle_direction = "BAIXA"
-    else:
-        last_candle_direction = "NEUTRO"
+    green_count = sum(1 for c in last_3 if candle_direction(c) == "GREEN")
+    red_count = sum(1 for c in last_3 if candle_direction(c) == "RED")
+
+    last_direction = candle_direction(last)
 
     body = abs(last["close"] - last["open"])
-    total_range = max(last["high"] - last["low"], 0.00000001)
-    body_ratio = body / total_range
+    candle_range = max(last["high"] - last["low"], 0.00000001)
 
-    lower_wick = min(last["open"], last["close"]) - last["low"]
     upper_wick = last["high"] - max(last["open"], last["close"])
+    lower_wick = min(last["open"], last["close"]) - last["low"]
 
-    rejection = "SEM REJEIÇÃO CLARA"
-
-    if lower_wick > body * 1.5:
-        rejection = "REJEIÇÃO INFERIOR"
-    elif upper_wick > body * 1.5:
-        rejection = "REJEIÇÃO SUPERIOR"
-
-    if bullish_count >= 2 and last_candle_direction == "ALTA":
-        status = "CANDLES FAVORÁVEIS PARA LONG"
-    elif bearish_count >= 2 and last_candle_direction == "BAIXA":
-        status = "CANDLES FAVORÁVEIS PARA SHORT"
+    if lower_wick > body * 1.5 and lower_wick > candle_range * 0.35:
+        rejection = "PAVIO INFERIOR"
+    elif upper_wick > body * 1.5 and upper_wick > candle_range * 0.35:
+        rejection = "PAVIO SUPERIOR"
     else:
-        status = "CANDLES NEUTROS"
+        rejection = "SEM REJEIÇÃO CLARA"
+
+    if green_count >= 2 and last_direction == "GREEN":
+        status = "FAVORÁVEL PARA LONG"
+        description = "Candles recentes mostram reação compradora."
+    elif red_count >= 2 and last_direction == "RED":
+        status = "FAVORÁVEL PARA SHORT"
+        description = "Candles recentes mostram pressão vendedora."
+    else:
+        status = "NEUTRO"
+        description = "Candles ainda sem confirmação suficiente."
 
     return {
         "status": status,
-        "bullish_count": bullish_count,
-        "bearish_count": bearish_count,
-        "last_candle_direction": last_candle_direction,
-        "body_ratio": round(body_ratio, 2),
+        "last": last_direction,
+        "green_count": green_count,
+        "red_count": red_count,
         "rejection": rejection,
+        "description": description,
     }
-
-
-def analyze_trend(candles):
-    if not candles or len(candles) < 60:
-        return {
-            "trend": "INDEFINIDA",
-            "description": "Dados insuficientes para tendência.",
-        }
-
-    closes = [c["close"] for c in candles]
-
-    sma_20 = calculate_sma(closes, 20)
-    sma_50 = calculate_sma(closes, 50)
-    last_close = closes[-1]
-
-    if sma_20 is None or sma_50 is None:
-        return {
-            "trend": "INDEFINIDA",
-            "description": "Médias insuficientes.",
-        }
-
-    if last_close > sma_20 > sma_50:
-        return {
-            "trend": "ALTA",
-            "description": "Preço acima das médias principais.",
-        }
-
-    if last_close < sma_20 < sma_50:
-        return {
-            "trend": "BAIXA",
-            "description": "Preço abaixo das médias principais.",
-        }
-
-    return {
-        "trend": "LATERAL",
-        "description": "Mercado sem direção forte.",
-    }
-
-
-def calculate_distance_to_levels(price, support, resistance):
-    if not price:
-        return {
-            "distance_to_support_percent": 0,
-            "distance_to_resistance_percent": 0,
-        }
-
-    if support:
-        distance_to_support = ((price - support) / price) * 100
-    else:
-        distance_to_support = 0
-
-    if resistance:
-        distance_to_resistance = ((resistance - price) / price) * 100
-    else:
-        distance_to_resistance = 0
-
-    return {
-        "distance_to_support_percent": round(distance_to_support, 2),
-        "distance_to_resistance_percent": round(distance_to_resistance, 2),
-    }
-
-
-# ============================================================
-# Contexto BTC
-# ============================================================
 
 
 def analyze_btc_context():
@@ -380,336 +363,312 @@ def analyze_btc_context():
 
     if not candles_4h or not candles_5m:
         return {
-            "symbol": "BTCUSDT",
-            "status": "DADOS INSUFICIENTES",
+            "price": 0,
             "trend_4h": "INDEFINIDA",
             "trend_5m": "INDEFINIDA",
-            "pressure": "NEUTRA",
-            "risk_message": "Não foi possível ler dados suficientes do BTC.",
-            "last_price": 0,
+            "pressure": "INDEFINIDA",
+            "short_change_percent": 0,
+            "message": "Não foi possível ler o BTC.",
         }
 
     trend_4h = analyze_trend(candles_4h)
     trend_5m = analyze_trend(candles_5m)
 
-    last_price = candles_5m[-1]["close"]
+    price = candles_5m[-1]["close"]
 
-    recent_closes = [c["close"] for c in candles_5m[-12:]]
-    first = recent_closes[0]
-    last = recent_closes[-1]
+    recent = candles_5m[-12:]
+    first = recent[0]["close"]
+    last = recent[-1]["close"]
 
     short_change = ((last - first) / first) * 100 if first else 0
 
     if short_change <= -1.0:
-        pressure = "PRESSÃO VENDEDORA FORTE"
-        risk_message = "BTC caindo forte no curto prazo. Evitar novas entradas compradas sem confirmação."
+        pressure = "VENDEDORA FORTE"
+        message = "BTC pressionando para baixo. Cuidado com Long contra o fluxo."
     elif short_change >= 1.0:
-        pressure = "PRESSÃO COMPRADORA FORTE"
-        risk_message = "BTC subindo forte no curto prazo. Cuidado com Shorts contra o fluxo."
+        pressure = "COMPRADORA FORTE"
+        message = "BTC pressionando para cima. Cuidado com Short contra o fluxo."
     else:
-        pressure = "NEUTRA/LATERAL"
-        risk_message = "BTC sem pressão extrema no curto prazo."
+        pressure = "LATERAL"
+        message = "BTC sem pressão extrema neste momento."
 
     return {
-        "symbol": "BTCUSDT",
-        "status": "OK",
-        "trend_4h": trend_4h["trend"],
-        "trend_5m": trend_5m["trend"],
+        "price": price,
+        "trend_4h": trend_4h["status"],
+        "trend_5m": trend_5m["status"],
         "pressure": pressure,
-        "risk_message": risk_message,
-        "last_price": last_price,
-        "short_change_percent": round(short_change, 2),
+        "short_change_percent": safe_round(short_change, 2),
+        "message": message,
     }
 
 
-# ============================================================
-# Estratégia MEC Educacional
-# ============================================================
-
-
-def decide_direction(analysis_4h, analysis_5m, volume_5m, candles_5m, btc_context):
-    trend_4h = analysis_4h["trend"]["trend"]
-    trend_5m = analysis_5m["trend"]["trend"]
-    candle_status = analysis_5m["candles"]["status"]
-    rejection = analysis_5m["candles"]["rejection"]
-    volume_status = volume_5m["status"]
-    btc_pressure = btc_context.get("pressure", "NEUTRA")
-
+def decide_direction(trend_4h, trend_5m, levels_5m, volume, candles, btc_context):
     long_points = 0
     short_points = 0
     reasons = []
+    blocks = []
 
-    if trend_4h in ["ALTA", "LATERAL"]:
+    if trend_4h["status"] in ["ALTA", "LATERAL"]:
         long_points += 1
-        reasons.append("4H não está contra Long.")
+    else:
+        blocks.append("4H não favorece Long.")
 
-    if trend_4h in ["BAIXA", "LATERAL"]:
+    if trend_4h["status"] in ["BAIXA", "LATERAL"]:
         short_points += 1
-        reasons.append("4H não está contra Short.")
+    else:
+        blocks.append("4H não favorece Short.")
 
-    if trend_5m == "ALTA":
+    if trend_5m["status"] == "ALTA":
         long_points += 2
-        reasons.append("5M favorece Long.")
-
-    if trend_5m == "BAIXA":
+        reasons.append("5M com estrutura de alta.")
+    elif trend_5m["status"] == "BAIXA":
         short_points += 2
-        reasons.append("5M favorece Short.")
+        reasons.append("5M com estrutura de baixa.")
+    else:
+        reasons.append("5M lateral ou indefinido.")
 
-    if candle_status == "CANDLES FAVORÁVEIS PARA LONG":
+    if candles["status"] == "FAVORÁVEL PARA LONG":
         long_points += 2
-        reasons.append("Candles recentes favorecem Long.")
+        reasons.append("Candles favorecem Long.")
 
-    if candle_status == "CANDLES FAVORÁVEIS PARA SHORT":
+    if candles["status"] == "FAVORÁVEL PARA SHORT":
         short_points += 2
-        reasons.append("Candles recentes favorecem Short.")
+        reasons.append("Candles favorecem Short.")
 
-    if rejection == "REJEIÇÃO INFERIOR":
+    if candles["rejection"] == "PAVIO INFERIOR":
         long_points += 1
-        reasons.append("Rejeição inferior pode indicar defesa de suporte.")
+        reasons.append("Pavio inferior indica defesa de suporte.")
 
-    if rejection == "REJEIÇÃO SUPERIOR":
+    if candles["rejection"] == "PAVIO SUPERIOR":
         short_points += 1
-        reasons.append("Rejeição superior pode indicar defesa de resistência.")
+        reasons.append("Pavio superior indica rejeição na resistência.")
 
-    if volume_status in ["VOLUME FORTE", "VOLUME MODERADO"]:
+    if levels_5m["channel_position"] == "PERTO DO SUPORTE":
+        long_points += 1
+        reasons.append("Preço próximo ao suporte.")
+    elif levels_5m["channel_position"] == "PERTO DA RESISTÊNCIA":
+        short_points += 1
+        reasons.append("Preço próximo à resistência.")
+    else:
+        blocks.append("Preço no meio do canal.")
+
+    if volume["status"] == "FORTE":
         long_points += 1
         short_points += 1
-        reasons.append("Volume tem participação relevante.")
+        reasons.append("Volume forte.")
+    elif volume["status"] == "MODERADO":
+        reasons.append("Volume moderado.")
+    else:
+        blocks.append("Volume fraco.")
 
-    if btc_pressure == "PRESSÃO VENDEDORA FORTE":
+    if btc_context["pressure"] == "VENDEDORA FORTE":
         long_points -= 2
         short_points += 1
-        reasons.append("BTC com pressão vendedora forte.")
-
-    if btc_pressure == "PRESSÃO COMPRADORA FORTE":
+        blocks.append("BTC com pressão vendedora forte.")
+    elif btc_context["pressure"] == "COMPRADORA FORTE":
         short_points -= 2
         long_points += 1
-        reasons.append("BTC com pressão compradora forte.")
+        blocks.append("BTC com pressão compradora forte.")
 
-    if long_points >= short_points + 2 and long_points >= 4:
-        direction = "LONG"
-    elif short_points >= long_points + 2 and short_points >= 4:
-        direction = "SHORT"
+    if long_points >= short_points + 2 and long_points >= 5:
+        direction = "POSSÍVEL LONG"
+    elif short_points >= long_points + 2 and short_points >= 5:
+        direction = "POSSÍVEL SHORT"
     else:
-        direction = "SEM DIREÇÃO"
+        direction = "NONE"
 
     return {
         "direction": direction,
         "long_points": long_points,
         "short_points": short_points,
         "reasons": reasons,
+        "blocks": blocks,
     }
 
 
-def calculate_score(symbol, ticker_data, analysis_4h, analysis_5m, direction_data, btc_context):
+def calculate_score(direction_data, trend_4h, trend_5m, levels_5m, volume, candles, btc_context):
     score = 0
-    blocks = []
-    alerts = []
+    hard_blocks = []
+    warnings = []
 
     direction = direction_data["direction"]
-    trend_4h = analysis_4h["trend"]["trend"]
-    trend_5m = analysis_5m["trend"]["trend"]
-    volume_status = analysis_5m["volume"]["status"]
-    volume_ratio = analysis_5m["volume"]["volume_ratio"]
-    candle_status = analysis_5m["candles"]["status"]
-    rejection = analysis_5m["candles"]["rejection"]
-    btc_pressure = btc_context.get("pressure", "NEUTRA/LATERAL")
 
-    quote_volume = ticker_data.get("quote_volume", 0)
-
-    if quote_volume >= 500_000_000:
-        score += 15
-    elif quote_volume >= 100_000_000:
+    if trend_4h["status"] in ["ALTA", "BAIXA"]:
         score += 10
-    elif quote_volume >= 30_000_000:
+    elif trend_4h["status"] == "LATERAL":
         score += 5
-    else:
-        blocks.append("Volume 24h baixo para prioridade operacional.")
+        warnings.append("4H lateral. Exige mais confirmação no 5M.")
 
-    if direction == "LONG":
-        if trend_4h in ["ALTA", "LATERAL"]:
-            score += 15
-        else:
-            blocks.append("4H contra Long.")
-
-        if trend_5m == "ALTA":
-            score += 15
-        else:
-            blocks.append("5M ainda não confirma Long.")
-
-        if candle_status == "CANDLES FAVORÁVEIS PARA LONG":
-            score += 15
-        else:
-            blocks.append("Candles não confirmam Long.")
-
-        if rejection == "REJEIÇÃO INFERIOR":
-            score += 10
-
-        if btc_pressure == "PRESSÃO VENDEDORA FORTE":
-            score -= 20
-            blocks.append("BTC contra entrada Long.")
-
-    elif direction == "SHORT":
-        if trend_4h in ["BAIXA", "LATERAL"]:
-            score += 15
-        else:
-            blocks.append("4H contra Short.")
-
-        if trend_5m == "BAIXA":
-            score += 15
-        else:
-            blocks.append("5M ainda não confirma Short.")
-
-        if candle_status == "CANDLES FAVORÁVEIS PARA SHORT":
-            score += 15
-        else:
-            blocks.append("Candles não confirmam Short.")
-
-        if rejection == "REJEIÇÃO SUPERIOR":
-            score += 10
-
-        if btc_pressure == "PRESSÃO COMPRADORA FORTE":
-            score -= 20
-            blocks.append("BTC contra entrada Short.")
-
-    else:
-        blocks.append("Sem direção técnica clara.")
-        score = min(score, 35)
-
-    if volume_status == "VOLUME FORTE":
+    if trend_5m["status"] in ["ALTA", "BAIXA"]:
         score += 15
-    elif volume_status == "VOLUME MODERADO":
-        score += 8
     else:
-        blocks.append("Volume 5M fraco.")
-        score = min(score, 60)
+        warnings.append("5M sem direção forte.")
 
-    if volume_ratio < 1.0:
-        alerts.append("Volume atual abaixo da média recente.")
+    if candles["status"] in ["FAVORÁVEL PARA LONG", "FAVORÁVEL PARA SHORT"]:
+        score += 20
+    else:
+        hard_blocks.append("Candles sem confirmação.")
 
-    # Travas rígidas
-    if direction == "SEM DIREÇÃO":
-        score = min(score, 35)
+    if candles["rejection"] in ["PAVIO INFERIOR", "PAVIO SUPERIOR"]:
+        score += 10
 
-    if volume_status == "VOLUME FRACO":
-        score = min(score, 60)
+    if volume["status"] == "FORTE":
+        score += 20
+    elif volume["status"] == "MODERADO":
+        score += 10
+        warnings.append("Volume moderado. Aguardar confirmação.")
+    else:
+        hard_blocks.append("Volume fraco.")
 
-    if candle_status == "CANDLES NEUTROS":
-        score = min(score, 65)
+    if levels_5m["channel_position"] in ["PERTO DO SUPORTE", "PERTO DA RESISTÊNCIA"]:
+        score += 15
+    else:
+        hard_blocks.append("Preço no meio do canal.")
 
-    if blocks:
-        score = min(score, 75)
+    if btc_context["pressure"] in ["COMPRADORA FORTE", "VENDEDORA FORTE"]:
+        warnings.append("BTC com pressão forte. Cautela elevada.")
+        score -= 10
+
+    if direction == "NONE":
+        hard_blocks.append("Sem direção operacional clara.")
+        score = min(score, 45)
+
+    if hard_blocks:
+        score = min(score, 69)
 
     score = max(0, min(100, int(score)))
 
     if score >= 80:
-        classification = "FORTE, MAS SOMENTE OBSERVAR"
-    elif score >= 60:
-        classification = "MODERADA / MONITORAR"
-    elif score >= 40:
-        classification = "FRACA / AGUARDAR"
+        label = "SETUP FORTE EDUCACIONAL"
+    elif score >= 70:
+        label = "SETUP MODERADO"
+    elif score >= 50:
+        label = "SETUP EM FORMAÇÃO"
     else:
-        classification = "SEM OPORTUNIDADE"
+        label = "AGUARDAR"
 
     return {
         "score": score,
-        "classification": classification,
-        "blocks": blocks,
-        "alerts": alerts,
+        "label": label,
+        "hard_blocks": hard_blocks,
+        "warnings": warnings,
+    }
+
+
+def classify_setup_phase(score_data, direction_data, levels_5m, volume, candles):
+    score = score_data["score"]
+    direction = direction_data["direction"]
+
+    if direction != "NONE" and score >= 70 and not score_data["hard_blocks"]:
+        return {
+            "phase": "POSSÍVEL SETUP EDUCACIONAL",
+            "action": "Observar confirmação final. Nenhuma ordem automática.",
+            "color": "green",
+        }
+
+    if score >= 50:
+        if volume["status"] in ["FORTE", "MODERADO"] or candles["status"] != "NEUTRO":
+            return {
+                "phase": "SETUP EM FORMAÇÃO",
+                "action": "Monitorar reteste, rompimento ou confirmação de volume.",
+                "color": "yellow",
+            }
+
+    if levels_5m["channel_position"] == "MEIO DO CANAL":
+        return {
+            "phase": "MEIO DO CANAL",
+            "action": "Aguardar aproximação de suporte ou resistência.",
+            "color": "red",
+        }
+
+    return {
+        "phase": "SEM SETUP",
+        "action": "Preservar capital e aguardar nova estrutura.",
+        "color": "gray",
     }
 
 
 def build_risk_engine(score_data, direction_data, btc_context):
     score = score_data["score"]
     direction = direction_data["direction"]
-    blocks = score_data["blocks"]
-    btc_pressure = btc_context.get("pressure", "NEUTRA/LATERAL")
+    hard_blocks = score_data["hard_blocks"]
 
-    decision = "AGUARDAR"
-    risk_level = "BAIXO"
-    message = "Cenário sem liberação operacional. Apenas observar."
+    if direction == "NONE":
+        return {
+            "status": "NÃO OPERAR",
+            "risk": "BAIXO/MÉDIO",
+            "message": "Sem direção operacional clara. Robô permanece observando.",
+        }
 
-    if direction == "SEM DIREÇÃO":
-        decision = "BLOQUEAR"
-        risk_level = "MÉDIO"
-        message = "Sem direção técnica clara. Entrada bloqueada no modo educacional."
+    if hard_blocks:
+        return {
+            "status": "BLOQUEADO",
+            "risk": "MÉDIO",
+            "message": "Existem travas técnicas. Aguardar nova confirmação.",
+        }
 
-    elif blocks:
-        decision = "AGUARDAR"
-        risk_level = "MÉDIO"
-        message = "Existem bloqueios técnicos. Aguardar novas confirmações."
+    if btc_context["pressure"] in ["COMPRADORA FORTE", "VENDEDORA FORTE"]:
+        return {
+            "status": "CAUTELA MÁXIMA",
+            "risk": "ALTO",
+            "message": "BTC está com pressão forte. Evitar decisão precipitada.",
+        }
 
-    elif score >= 80:
-        decision = "OBSERVAR COM ATENÇÃO"
-        risk_level = "MÉDIO"
-        message = "Boa confluência técnica, mas o robô segue sem executar ordens."
+    if score >= 80:
+        return {
+            "status": "OBSERVAR SETUP",
+            "risk": "MÉDIO",
+            "message": "Setup forte para estudo, mas sem execução automática.",
+        }
 
-    elif score >= 60:
-        decision = "MONITORAR"
-        risk_level = "MÉDIO"
-        message = "Cenário parcial. Precisa de confirmação adicional."
-
-    else:
-        decision = "AGUARDAR"
-        risk_level = "BAIXO"
-        message = "Score insuficiente para qualquer consideração operacional."
-
-    if btc_pressure in ["PRESSÃO VENDEDORA FORTE", "PRESSÃO COMPRADORA FORTE"]:
-        risk_level = "ALTO"
-        message += " Atenção: BTC está com pressão forte no curto prazo."
+    if score >= 70:
+        return {
+            "status": "MONITORAR COM CAUTELA",
+            "risk": "MÉDIO",
+            "message": "Setup moderado. Exige confirmação adicional.",
+        }
 
     return {
-        "decision": decision,
-        "risk_level": risk_level,
-        "message": message,
+        "status": "AGUARDAR",
+        "risk": "BAIXO",
+        "message": "Score insuficiente para cenário educacional.",
     }
 
 
-def build_educational_3x(symbol, direction, analysis_5m, score_data):
+def build_educational_3x(score_data, direction_data):
     score = score_data["score"]
+    direction = direction_data["direction"]
 
-    if direction == "SEM DIREÇÃO":
-        return {
-            "status": "NÃO CONSIDERAR 3X",
-            "message": "Sem direção técnica clara. 3X educacional bloqueado.",
-            "reduce_only": "OBRIGATÓRIO EM SAÍDA PARCIAL",
-            "suggestion": "Aguardar estrutura melhor.",
-        }
-
-    if score < 70:
-        return {
-            "status": "NÃO CONSIDERAR 3X",
-            "message": "Score insuficiente para cenário educacional de 3X.",
-            "reduce_only": "OBRIGATÓRIO EM SAÍDA PARCIAL",
-            "suggestion": "Aguardar confluência mais forte.",
-        }
-
-    volume_status = analysis_5m["volume"]["status"]
-    candle_status = analysis_5m["candles"]["status"]
-
-    if volume_status == "VOLUME FRACO" or candle_status == "CANDLES NEUTROS":
+    if direction == "NONE":
         return {
             "status": "3X BLOQUEADO",
-            "message": "Volume ou candles não confirmam força suficiente.",
-            "reduce_only": "OBRIGATÓRIO EM SAÍDA PARCIAL",
-            "suggestion": "Aguardar confirmação.",
+            "message": "Sem direção técnica clara. 3X não deve ser considerado.",
+            "reduce_only": "SIM, obrigatório em saída parcial.",
+        }
+
+    if score < 80:
+        return {
+            "status": "3X BLOQUEADO",
+            "message": "Score abaixo do nível mínimo educacional para estudar 3X.",
+            "reduce_only": "SIM, obrigatório em saída parcial.",
+        }
+
+    if score_data["hard_blocks"]:
+        return {
+            "status": "3X BLOQUEADO",
+            "message": "Existem bloqueios técnicos. Não estudar 3X neste cenário.",
+            "reduce_only": "SIM, obrigatório em saída parcial.",
         }
 
     return {
-        "status": "3X APENAS EDUCACIONAL",
-        "message": f"{symbol} tem confluência técnica para estudo, mas sem execução automática.",
-        "reduce_only": "OBRIGATÓRIO EM SAÍDA PARCIAL",
-        "suggestion": "Em ambiente real, exigir autorização humana e gestão rígida.",
+        "status": "3X SOMENTE EDUCACIONAL",
+        "message": "Cenário pode ser observado em estudo, sem execução automática.",
+        "reduce_only": "SIM, obrigatório em saída parcial.",
     }
 
 
-# ============================================================
-# Análise dos Ativos
-# ============================================================
-
-
-def analyze_symbol(ticker_data, btc_context):
-    symbol = ticker_data["symbol"]
+def analyze_asset(ticker, btc_context):
+    symbol = ticker["symbol"]
 
     candles_4h = get_klines(symbol, "4h", 120)
     candles_5m = get_klines(symbol, "5m", 120)
@@ -720,166 +679,141 @@ def analyze_symbol(ticker_data, btc_context):
             "status": "ERRO",
             "message": "Dados insuficientes.",
             "score": 0,
-            "direction": "SEM DIREÇÃO",
         }
 
     price = candles_5m[-1]["close"]
 
-    levels_4h = calculate_support_resistance(candles_4h, 50)
-    levels_5m = calculate_support_resistance(candles_5m, 40)
+    trend_4h = analyze_trend(candles_4h)
+    trend_5m = analyze_trend(candles_5m)
 
-    distance_4h = calculate_distance_to_levels(
-        price,
-        levels_4h["support"],
-        levels_4h["resistance"],
-    )
+    levels_4h = analyze_levels(candles_4h, 50)
+    levels_5m = analyze_levels(candles_5m, 40)
 
-    distance_5m = calculate_distance_to_levels(
-        price,
-        levels_5m["support"],
-        levels_5m["resistance"],
-    )
-
-    analysis_4h = {
-        "trend": analyze_trend(candles_4h),
-        "levels": levels_4h,
-        "distance": distance_4h,
-    }
-
-    analysis_5m = {
-        "trend": analyze_trend(candles_5m),
-        "levels": levels_5m,
-        "distance": distance_5m,
-        "volume": calculate_volume_context(candles_5m),
-        "candles": analyze_last_candles(candles_5m),
-    }
+    volume = analyze_volume(candles_5m)
+    candles = analyze_candles(candles_5m)
 
     direction_data = decide_direction(
-        analysis_4h,
-        analysis_5m,
-        analysis_5m["volume"],
-        candles_5m,
+        trend_4h,
+        trend_5m,
+        levels_5m,
+        volume,
+        candles,
         btc_context,
     )
 
     score_data = calculate_score(
-        symbol,
-        ticker_data,
-        analysis_4h,
-        analysis_5m,
         direction_data,
+        trend_4h,
+        trend_5m,
+        levels_5m,
+        volume,
+        candles,
         btc_context,
+    )
+
+    setup_phase = classify_setup_phase(
+        score_data,
+        direction_data,
+        levels_5m,
+        volume,
+        candles,
     )
 
     risk_engine = build_risk_engine(score_data, direction_data, btc_context)
 
-    educational_3x = build_educational_3x(
-        symbol,
-        direction_data["direction"],
-        analysis_5m,
-        score_data,
-    )
+    educational_3x = build_educational_3x(score_data, direction_data)
 
     return {
         "symbol": symbol,
         "status": "OK",
-        "last_price": price,
-        "quote_volume": ticker_data.get("quote_volume", 0),
-        "price_change_percent": ticker_data.get("price_change_percent", 0),
+        "price": price,
+        "change_percent": ticker["change_percent"],
+        "quote_volume": ticker["quote_volume"],
+        "trend_4h": trend_4h,
+        "trend_5m": trend_5m,
+        "levels_4h": levels_4h,
+        "levels_5m": levels_5m,
+        "volume": volume,
+        "candles": candles,
         "direction": direction_data["direction"],
         "long_points": direction_data["long_points"],
         "short_points": direction_data["short_points"],
         "reasons": direction_data["reasons"],
+        "blocks": direction_data["blocks"],
         "score": score_data["score"],
-        "classification": score_data["classification"],
-        "blocks": score_data["blocks"],
-        "alerts": score_data["alerts"],
-        "analysis_4h": analysis_4h,
-        "analysis_5m": analysis_5m,
+        "score_label": score_data["label"],
+        "hard_blocks": score_data["hard_blocks"],
+        "warnings": score_data["warnings"],
+        "setup_phase": setup_phase,
         "risk_engine": risk_engine,
         "educational_3x": educational_3x,
     }
 
 
-def build_general_decision(top_opportunities, btc_context):
-    if not top_opportunities:
-        return {
-            "status": "AGUARDAR",
-            "message": "Nenhuma oportunidade relevante foi encontrada neste ciclo.",
-            "level": "BAIXO",
-            "color": "gray",
-        }
+def build_general_decision(assets, btc_context):
+    valid_assets = [a for a in assets if a.get("status") == "OK"]
 
-    best = top_opportunities[0]
+    possible_setups = [
+        a
+        for a in valid_assets
+        if a["setup_phase"]["phase"] == "POSSÍVEL SETUP EDUCACIONAL"
+    ]
 
-    best_symbol = best.get("symbol", "N/A")
-    best_score = best.get("score", 0)
-    best_direction = best.get("direction", "SEM DIREÇÃO")
-    best_blocks = best.get("blocks", [])
-    btc_pressure = btc_context.get("pressure", "NEUTRA/LATERAL")
+    forming_setups = [
+        a
+        for a in valid_assets
+        if a["setup_phase"]["phase"] == "SETUP EM FORMAÇÃO"
+    ]
 
-    if best_direction == "SEM DIREÇÃO":
-        return {
-            "status": "AGUARDAR",
-            "message": "O melhor ativo do ciclo ainda não possui direção técnica clara.",
-            "level": "BAIXO",
-            "color": "gray",
-        }
-
-    if btc_pressure in ["PRESSÃO VENDEDORA FORTE", "PRESSÃO COMPRADORA FORTE"]:
+    if btc_context["pressure"] in ["COMPRADORA FORTE", "VENDEDORA FORTE"]:
         return {
             "status": "CAUTELA MÁXIMA",
-            "message": f"{best_symbol} apareceu no ranking, mas o BTC está com pressão forte. O robô permanece apenas observando.",
-            "level": "ALTO",
+            "reason": "BTC está com pressão forte no curto prazo.",
+            "action": "Não forçar entrada. Aguardar estabilização ou confirmação clara.",
             "color": "red",
         }
 
-    if best_blocks:
-        return {
-            "status": "MONITORAR",
-            "message": f"{best_symbol} tem sinais parciais, mas ainda possui bloqueios técnicos.",
-            "level": "MÉDIO",
-            "color": "yellow",
-        }
+    if possible_setups:
+        best = sorted(possible_setups, key=lambda x: x["score"], reverse=True)[0]
 
-    if best_score >= 80:
         return {
-            "status": "ATENÇÃO OPERACIONAL EDUCACIONAL",
-            "message": f"{best_symbol} apresenta boa confluência para {best_direction}, mas nenhuma ordem será executada.",
-            "level": "MÉDIO/ALTO",
+            "status": "OBSERVAR SETUP",
+            "reason": f"{best['symbol']} apresenta confluência educacional, mas sem execução automática.",
+            "action": "Aguardar confirmação humana, reteste e validação de risco.",
             "color": "green",
         }
 
-    if best_score >= 60:
+    if forming_setups:
+        best = sorted(forming_setups, key=lambda x: x["score"], reverse=True)[0]
+
         return {
-            "status": "MONITORAR",
-            "message": f"{best_symbol} apresenta sinais moderados. Aguardar confirmação adicional.",
-            "level": "MÉDIO",
+            "status": "SETUP EM FORMAÇÃO",
+            "reason": f"{best['symbol']} está formando cenário, mas ainda não confirmou.",
+            "action": "Monitorar volume, candle de confirmação e posição no canal.",
             "color": "yellow",
         }
 
     return {
-        "status": "AGUARDAR",
-        "message": "Nenhuma oportunidade possui confluência técnica suficiente neste ciclo.",
-        "level": "BAIXO",
-        "color": "gray",
+        "status": "NÃO OPERAR",
+        "reason": "Nenhuma oportunidade operacional forte encontrada neste ciclo.",
+        "action": "Preservar capital. Não operar no meio do canal, sem direção ou sem volume.",
+        "color": "red",
     }
 
 
-def build_cycle_report():
-    started_at = time.time()
+def build_report():
+    started = time.time()
 
     btc_context = analyze_btc_context()
+    tickers = get_24h_tickers()
 
-    symbols_by_volume = get_symbols_by_volume()
+    assets = []
 
-    assets_analysis = []
+    for ticker in tickers:
+        asset = analyze_asset(ticker, btc_context)
+        assets.append(asset)
 
-    for ticker_data in symbols_by_volume:
-        analysis = analyze_symbol(ticker_data, btc_context)
-        assets_analysis.append(analysis)
-
-    valid_assets = [a for a in assets_analysis if a.get("status") == "OK"]
+    valid_assets = [a for a in assets if a.get("status") == "OK"]
 
     top_opportunities = sorted(
         valid_assets,
@@ -887,37 +821,46 @@ def build_cycle_report():
         reverse=True,
     )[:5]
 
-    general_decision = build_general_decision(top_opportunities, btc_context)
+    setup_radar = [
+        a
+        for a in valid_assets
+        if a["setup_phase"]["phase"] in [
+            "POSSÍVEL SETUP EDUCACIONAL",
+            "SETUP EM FORMAÇÃO",
+            "MEIO DO CANAL",
+        ]
+    ]
 
-    if top_opportunities:
-        best = top_opportunities[0]
-        best_symbol = best.get("symbol", "N/A")
-        best_score = best.get("score", 0)
-        best_direction = best.get("direction", "SEM DIREÇÃO")
-    else:
-        best_symbol = "N/A"
-        best_score = 0
-        best_direction = "SEM DIREÇÃO"
+    setup_radar = sorted(
+        setup_radar,
+        key=lambda x: x.get("score", 0),
+        reverse=True,
+    )[:7]
 
-    finished_at = time.time()
-    duration = round(finished_at - started_at, 2)
+    general_decision = build_general_decision(valid_assets, btc_context)
+
+    possible_longs = len([a for a in valid_assets if a.get("direction") == "POSSÍVEL LONG"])
+    possible_shorts = len([a for a in valid_assets if a.get("direction") == "POSSÍVEL SHORT"])
+    waiting = len([a for a in valid_assets if a.get("direction") == "NONE"])
+
+    duration = round(time.time() - started, 2)
 
     summary = {
         "app_name": APP_NAME,
         "mode": APP_MODE,
-        "version": VERSION,
-        "environment": "Binance Futures Testnet / Dados Públicos",
-        "base_url": BASE_URL,
-        "cycle_time": now_utc_text(),
-        "duration_seconds": duration,
+        "version": APP_VERSION,
+        "updated_at": now_utc(),
+        "selection_mode": "AUTO_VOLUME_WITH_WHITE_LIST",
+        "white_list_enabled": True,
         "white_list_count": len(WHITE_LIST),
-        "analyzed_count": len(valid_assets),
-        "best_symbol": best_symbol,
-        "best_score": best_score,
-        "best_direction": best_direction,
+        "assets_analyzed": len(valid_assets),
+        "possible_longs": possible_longs,
+        "possible_shorts": possible_shorts,
+        "waiting": waiting,
+        "duration_seconds": duration,
         "orders_enabled": False,
-        "real_trading_enabled": False,
-        "testnet_trading_enabled": False,
+        "real_orders_enabled": False,
+        "testnet_orders_enabled": False,
     }
 
     return {
@@ -925,16 +868,12 @@ def build_cycle_report():
         "general_decision": general_decision,
         "btc_context": btc_context,
         "top_opportunities": top_opportunities,
-        "assets_analysis": assets_analysis,
+        "setup_radar": setup_radar,
+        "assets": valid_assets,
     }
 
 
-# ============================================================
-# HTML Dashboard
-# ============================================================
-
-
-DASHBOARD_HTML = """
+HTML = """
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -945,402 +884,493 @@ DASHBOARD_HTML = """
     <style>
         body {
             margin: 0;
-            padding: 0;
             background: #0b1020;
-            color: #e5e7eb;
+            color: #f8fafc;
             font-family: Arial, Helvetica, sans-serif;
+            font-size: 16px;
         }
 
-        .container {
-            max-width: 1300px;
-            margin: 0 auto;
-            padding: 24px;
+        .page {
+            max-width: 1180px;
+            margin: auto;
+            padding: 36px 18px 60px;
         }
 
-        .header {
-            background: linear-gradient(135deg, #111827, #1e3a8a);
-            border-radius: 18px;
-            padding: 26px;
-            margin-bottom: 22px;
-            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+        h1 {
+            font-size: 38px;
+            margin-bottom: 8px;
         }
 
-        .header h1 {
-            margin: 0 0 8px 0;
-            font-size: 34px;
-            color: #ffffff;
+        h2 {
+            font-size: 26px;
+            margin-top: 0;
         }
 
-        .header p {
-            margin: 4px 0;
+        h3 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        p {
+            line-height: 1.5;
+        }
+
+        .subtitle {
             color: #cbd5e1;
+            font-size: 18px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 18px;
+            padding: 24px;
+            margin: 22px 0;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.22);
         }
 
         .grid {
             display: grid;
             grid-template-columns: repeat(12, 1fr);
-            gap: 18px;
+            gap: 14px;
         }
 
-        .card {
-            background: #111827;
-            border: 1px solid #1f2937;
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 10px 22px rgba(0,0,0,0.25);
+        .box {
+            background: #0f172a;
+            border-radius: 12px;
+            padding: 14px;
+            overflow: hidden;
         }
 
-        .card h2 {
-            margin-top: 0;
-            margin-bottom: 14px;
-            color: #ffffff;
-            font-size: 22px;
-        }
-
-        .card h3 {
-            margin-top: 0;
-            color: #f9fafb;
-        }
-
-        .col-12 {
-            grid-column: span 12;
-        }
-
-        .col-6 {
-            grid-column: span 6;
+        .col-3 {
+            grid-column: span 3;
         }
 
         .col-4 {
             grid-column: span 4;
         }
 
-        .status-green {
-            border-left: 6px solid #22c55e;
+        .col-6 {
+            grid-column: span 6;
         }
 
-        .status-yellow {
-            border-left: 6px solid #eab308;
-        }
-
-        .status-red {
-            border-left: 6px solid #ef4444;
-        }
-
-        .status-gray {
-            border-left: 6px solid #64748b;
+        .col-12 {
+            grid-column: span 12;
         }
 
         .pill {
             display: inline-block;
-            padding: 6px 10px;
             border-radius: 999px;
-            background: #1f2937;
-            color: #e5e7eb;
-            font-size: 13px;
-            margin: 3px 4px 3px 0;
-        }
-
-        .pill-green {
-            background: rgba(34,197,94,0.15);
-            color: #86efac;
-            border: 1px solid rgba(34,197,94,0.35);
-        }
-
-        .pill-yellow {
-            background: rgba(234,179,8,0.15);
-            color: #fde68a;
-            border: 1px solid rgba(234,179,8,0.35);
-        }
-
-        .pill-red {
-            background: rgba(239,68,68,0.15);
-            color: #fca5a5;
-            border: 1px solid rgba(239,68,68,0.35);
-        }
-
-        .pill-blue {
-            background: rgba(59,130,246,0.15);
-            color: #93c5fd;
-            border: 1px solid rgba(59,130,246,0.35);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            overflow: hidden;
-            border-radius: 12px;
-        }
-
-        th, td {
-            padding: 12px 10px;
-            border-bottom: 1px solid #1f2937;
-            text-align: left;
+            padding: 8px 12px;
+            margin: 4px 4px 4px 0;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-weight: bold;
             font-size: 14px;
         }
 
-        th {
-            color: #cbd5e1;
-            background: #0f172a;
+        .green {
+            background: #16a34a;
+            color: white;
         }
 
-        tr:hover {
-            background: rgba(255,255,255,0.03);
+        .yellow {
+            background: #f59e0b;
+            color: #111827;
+        }
+
+        .red {
+            background: #ef4444;
+            color: white;
+        }
+
+        .gray {
+            background: #64748b;
+            color: white;
+        }
+
+        .blue {
+            background: #2563eb;
+            color: white;
+        }
+
+        .border-green {
+            border-left: 7px solid #16a34a;
+        }
+
+        .border-yellow {
+            border-left: 7px solid #f59e0b;
+        }
+
+        .border-red {
+            border-left: 7px solid #ef4444;
+        }
+
+        .border-gray {
+            border-left: 7px solid #64748b;
         }
 
         .muted {
             color: #94a3b8;
         }
 
-        .small {
-            font-size: 13px;
+        .alert {
+            background: rgba(239,68,68,0.15);
+            border: 1px solid rgba(239,68,68,0.35);
+            color: #fecaca;
+            padding: 14px;
+            border-radius: 12px;
+            margin-top: 12px;
+        }
+
+        .note {
+            background: rgba(59,130,246,0.15);
+            border: 1px solid rgba(59,130,246,0.35);
+            color: #bfdbfe;
+            padding: 14px;
+            border-radius: 12px;
+            margin-top: 12px;
+        }
+
+        .asset {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .asset-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
         }
 
         .score {
-            font-size: 24px;
-            font-weight: bold;
+            font-size: 26px;
+            font-weight: 900;
         }
 
-        .warning {
-            background: rgba(239,68,68,0.12);
-            border: 1px solid rgba(239,68,68,0.35);
-            padding: 12px;
-            border-radius: 12px;
-            color: #fecaca;
+        .list-item {
+            margin: 6px 0;
         }
 
-        .success {
-            background: rgba(34,197,94,0.12);
-            border: 1px solid rgba(34,197,94,0.35);
-            padding: 12px;
-            border-radius: 12px;
-            color: #bbf7d0;
-        }
-
-        .info {
-            background: rgba(59,130,246,0.12);
-            border: 1px solid rgba(59,130,246,0.35);
-            padding: 12px;
-            border-radius: 12px;
-            color: #bfdbfe;
+        a {
+            color: #93c5fd;
         }
 
         @media (max-width: 900px) {
-            .col-6, .col-4 {
+            .col-3,
+            .col-4,
+            .col-6 {
                 grid-column: span 12;
             }
 
-            .header h1 {
-                font-size: 26px;
+            h1 {
+                font-size: 30px;
             }
 
-            table {
-                font-size: 12px;
+            h2 {
+                font-size: 22px;
             }
 
-            th, td {
-                padding: 8px 6px;
+            body {
+                font-size: 15px;
             }
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
+    <div class="page">
 
-        <div class="header">
-            <h1>🦅 ÁGUIA MASTER BOT</h1>
-            <p><strong>Modo:</strong> {{ summary.mode }}</p>
-            <p><strong>Ambiente:</strong> {{ summary.environment }}</p>
-            <p><strong>Importante:</strong> robô observador, sem execução de ordens reais ou testnet.</p>
+        <h1>🦅 ÁGUIA MASTER BOT</h1>
+        <p class="subtitle">
+            Robô observador do Método Águia Cripto — modo seguro, educacional e sem execução de ordens.
+        </p>
+        <p class="muted">Última atualização: {{ summary.updated_at }}</p>
+
+        <div class="card">
+            <h2>Resumo do Ciclo</h2>
+
+            <div class="grid">
+                <div class="box col-3">
+                    <strong>Modo seleção:</strong><br>
+                    {{ summary.selection_mode }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Lista branca:</strong><br>
+                    {{ summary.white_list_enabled }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Ativos analisados:</strong><br>
+                    {{ summary.assets_analyzed }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Duração:</strong><br>
+                    {{ summary.duration_seconds }}s
+                </div>
+
+                <div class="box col-3">
+                    <strong>Possíveis Longs:</strong><br>
+                    {{ summary.possible_longs }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Possíveis Shorts:</strong><br>
+                    {{ summary.possible_shorts }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Aguardando:</strong><br>
+                    {{ summary.waiting }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Versão:</strong><br>
+                    {{ summary.version }}
+                </div>
+            </div>
         </div>
 
-        <div class="grid">
+        <div class="card border-{{ general_decision.color }}">
+            <h2>Decisão Geral do Ciclo</h2>
 
-            <div class="card col-12">
-                <h2>Resumo do Ciclo</h2>
-                <span class="pill pill-blue">Versão: {{ summary.version }}</span>
-                <span class="pill pill-blue">Horário: {{ summary.cycle_time }}</span>
-                <span class="pill pill-blue">Duração: {{ summary.duration_seconds }}s</span>
-                <span class="pill pill-blue">Ativos analisados: {{ summary.analyzed_count }}</span>
-                <span class="pill pill-blue">Lista branca: {{ summary.white_list_count }}</span>
+            <span class="pill {{ general_decision.color }}">
+                {{ general_decision.status }}
+            </span>
 
-                <p></p>
+            <p><strong>Motivo:</strong> {{ general_decision.reason }}</p>
+            <p><strong>Ação recomendada:</strong> {{ general_decision.action }}</p>
 
-                <p><strong>Melhor ativo:</strong> {{ summary.best_symbol }}</p>
-                <p><strong>Melhor direção:</strong> {{ summary.best_direction }}</p>
-                <p><strong>Melhor score:</strong> {{ summary.best_score }}</p>
+            <p class="muted">
+                Regra de segurança: este robô está em modo observador.
+                Nenhuma ordem real ou testnet é executada automaticamente.
+            </p>
+        </div>
 
-                <div class="warning">
-                    Execução de ordens: DESATIVADA. API Key: NÃO USADA. Modo apenas educacional e observador.
+        <div class="card">
+            <h2>Contexto BTC</h2>
+
+            <div class="grid">
+                <div class="box col-3">
+                    <strong>Preço:</strong><br>
+                    {{ btc_context.price | price }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>4H:</strong><br>
+                    {{ btc_context.trend_4h }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>5M:</strong><br>
+                    {{ btc_context.trend_5m }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Pressão:</strong><br>
+                    {{ btc_context.pressure }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Variação curta:</strong><br>
+                    {{ btc_context.short_change_percent }}%
                 </div>
             </div>
 
-            <div class="card col-12 status-{{ general_decision.color }}">
-                <h2>Decisão Geral do Ciclo</h2>
-                <p><strong>Status:</strong> {{ general_decision.status }}</p>
-                <p><strong>Mensagem:</strong> {{ general_decision.message }}</p>
-                <p><strong>Nível:</strong> {{ general_decision.level }}</p>
-            </div>
+            <p>{{ btc_context.message }}</p>
+        </div>
 
-            <div class="card col-12">
-                <h2>Contexto BTC</h2>
-                <span class="pill pill-blue">BTCUSDT</span>
-                <span class="pill">Preço: {{ btc_context.last_price | round(2) }}</span>
-                <span class="pill">4H: {{ btc_context.trend_4h }}</span>
-                <span class="pill">5M: {{ btc_context.trend_5m }}</span>
-                <span class="pill">Pressão: {{ btc_context.pressure }}</span>
-                <span class="pill">Variação curta: {{ btc_context.short_change_percent }}%</span>
+        <div class="card">
+            <h2>Radar de Setup em Formação</h2>
+            <p class="muted">
+                Este bloco mostra ativos que ainda não são operação, mas que merecem observação.
+            </p>
 
-                <p>{{ btc_context.risk_message }}</p>
-            </div>
+            {% if setup_radar %}
+                {% for item in setup_radar %}
+                    <div class="asset border-{{ item.setup_phase.color }}">
+                        <div class="asset-title">
+                            <h3>{{ item.symbol }}</h3>
+                            <span class="pill {{ item.setup_phase.color }}">
+                                {{ item.setup_phase.phase }}
+                            </span>
+                        </div>
 
-            <div class="card col-12">
-                <h2>Top Oportunidades do Ciclo</h2>
+                        <span class="pill blue">Score: {{ item.score }}</span>
+                        <span class="pill">Direção: {{ item.direction }}</span>
+                        <span class="pill">Canal 5M: {{ item.levels_5m.channel_position }}</span>
+                        <span class="pill">Volume: {{ item.volume.status }} — {{ item.volume.ratio }}x</span>
+                        <span class="pill">Candles: {{ item.candles.status }}</span>
 
-                {% if top_opportunities %}
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Ativo</th>
-                                <th>Direção</th>
-                                <th>Score</th>
-                                <th>Classificação</th>
-                                <th>Preço</th>
-                                <th>Volume 24h</th>
-                                <th>Risco</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in top_opportunities %}
-                            <tr>
-                                <td><strong>{{ item.symbol }}</strong></td>
-                                <td>{{ item.direction }}</td>
-                                <td><span class="score">{{ item.score }}</span></td>
-                                <td>{{ item.classification }}</td>
-                                <td>{{ "%.6f"|format(item.last_price) }}</td>
-                                <td>{{ "{:,.0f}".format(item.quote_volume) }}</td>
-                                <td>{{ item.risk_engine.risk_level }}</td>
-                            </tr>
+                        <p><strong>Ação:</strong> {{ item.setup_phase.action }}</p>
+
+                        {% if item.warnings %}
+                            <p><strong>Alertas:</strong></p>
+                            {% for warning in item.warnings %}
+                                <div class="list-item">⚠️ {{ warning }}</div>
                             {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>Nenhuma oportunidade encontrada neste ciclo.</p>
-                {% endif %}
-            </div>
-
-            <div class="card col-12">
-                <h2>Análise dos Ativos</h2>
-
-                {% for item in assets_analysis %}
-                    <div class="card" style="margin-bottom: 16px; background: #0f172a;">
-                        <h3>{{ item.symbol }}</h3>
-
-                        {% if item.status != "OK" %}
-                            <p>{{ item.message }}</p>
-                        {% else %}
-                            <span class="pill pill-blue">Preço: {{ "%.6f"|format(item.last_price) }}</span>
-                            <span class="pill">Variação 24h: {{ item.price_change_percent }}%</span>
-                            <span class="pill">Direção: {{ item.direction }}</span>
-                            <span class="pill">Score: {{ item.score }}</span>
-                            <span class="pill">Classificação: {{ item.classification }}</span>
-
-                            <p></p>
-
-                            <div class="grid">
-                                <div class="card col-6" style="background:#111827;">
-                                    <h3>4H</h3>
-                                    <p><strong>Tendência:</strong> {{ item.analysis_4h.trend.trend }}</p>
-                                    <p class="muted">{{ item.analysis_4h.trend.description }}</p>
-                                    <p><strong>Suporte:</strong> {{ "%.6f"|format(item.analysis_4h.levels.support) }}</p>
-                                    <p><strong>Resistência:</strong> {{ "%.6f"|format(item.analysis_4h.levels.resistance) }}</p>
-                                    <p><strong>Distância suporte:</strong> {{ item.analysis_4h.distance.distance_to_support_percent }}%</p>
-                                    <p><strong>Distância resistência:</strong> {{ item.analysis_4h.distance.distance_to_resistance_percent }}%</p>
-                                </div>
-
-                                <div class="card col-6" style="background:#111827;">
-                                    <h3>5M</h3>
-                                    <p><strong>Tendência:</strong> {{ item.analysis_5m.trend.trend }}</p>
-                                    <p class="muted">{{ item.analysis_5m.trend.description }}</p>
-                                    <p><strong>Volume:</strong> {{ item.analysis_5m.volume.status }} — {{ item.analysis_5m.volume.volume_ratio }}x</p>
-                                    <p><strong>Candles:</strong> {{ item.analysis_5m.candles.status }}</p>
-                                    <p><strong>Rejeição:</strong> {{ item.analysis_5m.candles.rejection }}</p>
-                                    <p><strong>Suporte:</strong> {{ "%.6f"|format(item.analysis_5m.levels.support) }}</p>
-                                    <p><strong>Resistência:</strong> {{ "%.6f"|format(item.analysis_5m.levels.resistance) }}</p>
-                                </div>
-                            </div>
-
-                            <p><strong>Pontos Long:</strong> {{ item.long_points }} | <strong>Pontos Short:</strong> {{ item.short_points }}</p>
-
-                            {% if item.reasons %}
-                                <p><strong>Leituras técnicas:</strong></p>
-                                {% for reason in item.reasons %}
-                                    <span class="pill pill-blue">{{ reason }}</span>
-                                {% endfor %}
-                            {% endif %}
-
-                            {% if item.blocks %}
-                                <p><strong>Bloqueios:</strong></p>
-                                {% for block in item.blocks %}
-                                    <span class="pill pill-red">{{ block }}</span>
-                                {% endfor %}
-                            {% endif %}
-
-                            {% if item.alerts %}
-                                <p><strong>Alertas:</strong></p>
-                                {% for alert in item.alerts %}
-                                    <span class="pill pill-yellow">{{ alert }}</span>
-                                {% endfor %}
-                            {% endif %}
-
-                            <div class="info" style="margin-top: 12px;">
-                                <strong>Motor de Risco Educacional:</strong>
-                                {{ item.risk_engine.decision }} —
-                                {{ item.risk_engine.risk_level }} —
-                                {{ item.risk_engine.message }}
-                            </div>
-
-                            <div class="success" style="margin-top: 12px;">
-                                <strong>3X Educacional:</strong>
-                                {{ item.educational_3x.status }} —
-                                {{ item.educational_3x.message }}
-                                <br>
-                                <strong>Reduce Only:</strong> {{ item.educational_3x.reduce_only }}
-                            </div>
                         {% endif %}
                     </div>
                 {% endfor %}
-            </div>
-
-            <div class="card col-12">
-                <h2>Motor de Risco Educacional</h2>
-                <p>O motor avalia apenas critérios educacionais: direção, score, BTC, volume, candles, suporte, resistência e bloqueios técnicos.</p>
-                <div class="warning">
-                    Este robô não recomenda investimento, não executa ordens e não substitui autorização humana.
+            {% else %}
+                <div class="note">
+                    Nenhum setup em formação encontrado neste ciclo.
                 </div>
-            </div>
-
-            <div class="card col-12">
-                <h2>3X Educacional</h2>
-                <p>
-                    O bloco de 3X é apenas uma simulação conceitual. Qualquer saída parcial deve ser tratada como
-                    <strong>Reduce Only</strong> para evitar aumento acidental de posição.
-                </p>
-                <div class="warning">
-                    Nada neste painel deve ser interpretado como ordem de compra, venda, alavancagem ou recomendação financeira.
-                </div>
-            </div>
-
+            {% endif %}
         </div>
+
+        <div class="card">
+            <h2>Top Oportunidades do Ciclo</h2>
+
+            {% if top_opportunities %}
+                {% for item in top_opportunities %}
+                    <div class="asset">
+                        <div class="asset-title">
+                            <h3>#{{ loop.index }} {{ item.symbol }}</h3>
+                            <span class="pill {{ item.setup_phase.color }}">
+                                {{ item.setup_phase.phase }}
+                            </span>
+                        </div>
+
+                        <span class="pill blue">Score: {{ item.score }}</span>
+                        <span class="pill">Preço: {{ item.price | price }}</span>
+                        <span class="pill">Direção: {{ item.direction }}</span>
+                        <span class="pill">Confiança: {{ item.score_label }}</span>
+                        <span class="pill">Volume 24h: {{ item.quote_volume | money }}</span>
+
+                        <p><strong>Leitura:</strong> {{ item.setup_phase.action }}</p>
+
+                        {% if item.hard_blocks %}
+                            <p><strong>Pontos de atenção:</strong></p>
+                            {% for block in item.hard_blocks %}
+                                <div class="list-item">⛔ {{ block }}</div>
+                            {% endfor %}
+                        {% endif %}
+
+                        {% if item.warnings %}
+                            <p><strong>Travazinhas de segurança:</strong></p>
+                            {% for warning in item.warnings %}
+                                <div class="list-item">⚠️ {{ warning }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="note">
+                    Nenhuma oportunidade encontrada neste ciclo.
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2>Análise dos Ativos</h2>
+
+            {% for item in assets %}
+                <div class="asset">
+                    <div class="asset-title">
+                        <h3>{{ item.symbol }}</h3>
+                        <span class="pill {{ item.setup_phase.color }}">
+                            {{ item.setup_phase.phase }}
+                        </span>
+                    </div>
+
+                    <span class="pill">Preço: {{ item.price | price }}</span>
+                    <span class="pill">Score: {{ item.score }}</span>
+                    <span class="pill">Direção: {{ item.direction }}</span>
+                    <span class="pill">4H: {{ item.trend_4h.status }}</span>
+                    <span class="pill">5M: {{ item.trend_5m.status }}</span>
+                    <span class="pill">Volume: {{ item.volume.status }}</span>
+                    <span class="pill">Canal 5M: {{ item.levels_5m.channel_position }}</span>
+
+                    <div class="grid">
+                        <div class="box col-6">
+                            <h3>4H — Contexto</h3>
+                            <p><strong>Tendência:</strong> {{ item.trend_4h.status }}</p>
+                            <p>{{ item.trend_4h.description }}</p>
+                            <p><strong>Suporte:</strong> {{ item.levels_4h.support | price }}</p>
+                            <p><strong>Resistência:</strong> {{ item.levels_4h.resistance | price }}</p>
+                        </div>
+
+                        <div class="box col-6">
+                            <h3>5M — Gatilho</h3>
+                            <p><strong>Tendência:</strong> {{ item.trend_5m.status }}</p>
+                            <p><strong>Candles:</strong> {{ item.candles.status }}</p>
+                            <p><strong>Rejeição:</strong> {{ item.candles.rejection }}</p>
+                            <p><strong>Volume:</strong> {{ item.volume.status }} — {{ item.volume.ratio }}x</p>
+                        </div>
+                    </div>
+
+                    {% if item.reasons %}
+                        <p><strong>Motivos positivos:</strong></p>
+                        {% for reason in item.reasons %}
+                            <div class="list-item">✅ {{ reason }}</div>
+                        {% endfor %}
+                    {% endif %}
+
+                    {% if item.blocks %}
+                        <p><strong>Bloqueios:</strong></p>
+                        {% for block in item.blocks %}
+                            <div class="list-item">⛔ {{ block }}</div>
+                        {% endfor %}
+                    {% endif %}
+
+                    <div class="note">
+                        <strong>Motor de Risco Educacional:</strong>
+                        {{ item.risk_engine.status }} —
+                        {{ item.risk_engine.risk }} —
+                        {{ item.risk_engine.message }}
+                    </div>
+
+                    <div class="alert">
+                        <strong>3X Educacional:</strong>
+                        {{ item.educational_3x.status }} —
+                        {{ item.educational_3x.message }}
+                        <br>
+                        <strong>Reduce Only:</strong> {{ item.educational_3x.reduce_only }}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="card">
+            <h2>Segurança Operacional</h2>
+
+            <p>
+                Este painel é apenas educacional. Ele não envia ordem, não usa chave de API,
+                não acessa saldo, não altera posições e não executa compra ou venda.
+            </p>
+
+            <div class="alert">
+                Regra central: preservar capital vem antes de qualquer oportunidade.
+            </div>
+        </div>
+
+        <p class="muted">
+            Links rápidos:
+            <a href="/api/report">API JSON</a> |
+            <a href="/health">Health</a> |
+            <a href="/dashboard">Dashboard</a>
+        </p>
+
     </div>
 </body>
 </html>
 """
 
 
-# ============================================================
-# Rotas
-# ============================================================
+@app.template_filter("money")
+def money_filter(value):
+    return format_money(value)
+
+
+@app.template_filter("price")
+def price_filter(value):
+    return format_price(value)
 
 
 @app.route("/")
@@ -1348,8 +1378,8 @@ def home():
     return """
     <html>
         <head>
-            <title>ÁGUIA MASTER BOT</title>
             <meta charset="UTF-8">
+            <title>ÁGUIA MASTER BOT</title>
             <style>
                 body {
                     background: #0b1020;
@@ -1357,17 +1387,20 @@ def home():
                     font-family: Arial, sans-serif;
                     padding: 40px;
                 }
+
                 a {
                     color: #93c5fd;
                     font-size: 20px;
                 }
             </style>
         </head>
+
         <body>
             <h1>🦅 ÁGUIA MASTER BOT</h1>
             <p>Robô observador educacional online.</p>
             <p><a href="/dashboard">Abrir Dashboard</a></p>
-            <p><a href="/api/report">Ver JSON do Ciclo</a></p>
+            <p><a href="/api/report">Ver API JSON</a></p>
+            <p><a href="/health">Ver Health</a></p>
         </body>
     </html>
     """
@@ -1375,28 +1408,22 @@ def home():
 
 @app.route("/dashboard")
 def dashboard():
-    report = build_cycle_report()
-
-    summary = report.get("summary", {})
-    general_decision = report.get("general_decision", {})
-    btc_context = report.get("btc_context", {})
-    top_opportunities = report.get("top_opportunities", [])
-    assets_analysis = report.get("assets_analysis", [])
+    report = build_report()
 
     return render_template_string(
-        DASHBOARD_HTML,
-        summary=summary,
-        general_decision=general_decision,
-        btc_context=btc_context,
-        top_opportunities=top_opportunities,
-        assets_analysis=assets_analysis,
+        HTML,
+        summary=report["summary"],
+        general_decision=report["general_decision"],
+        btc_context=report["btc_context"],
+        top_opportunities=report["top_opportunities"],
+        setup_radar=report["setup_radar"],
+        assets=report["assets"],
     )
 
 
 @app.route("/api/report")
 def api_report():
-    report = build_cycle_report()
-    return jsonify(report)
+    return jsonify(build_report())
 
 
 @app.route("/health")
@@ -1406,16 +1433,13 @@ def health():
             "status": "ok",
             "app": APP_NAME,
             "mode": APP_MODE,
-            "version": VERSION,
+            "version": APP_VERSION,
             "orders_enabled": False,
-            "timestamp": now_utc_text(),
+            "real_orders_enabled": False,
+            "testnet_orders_enabled": False,
+            "updated_at": now_utc(),
         }
     )
-
-
-# ============================================================
-# Execução local
-# ============================================================
 
 
 if __name__ == "__main__":
