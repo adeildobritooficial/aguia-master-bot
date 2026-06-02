@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import requests
 from flask import Flask, jsonify, render_template_string
 
+from exchange_binance import get_binance_testnet_diagnostic
 
 app = Flask(__name__)
 
@@ -1441,6 +1442,10 @@ def health():
         }
     )
 
+@app.route("/api/binance-testnet")
+def api_binance_testnet():
+    diagnostic = get_binance_testnet_diagnostic()
+    return jsonify(diagnostic)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
