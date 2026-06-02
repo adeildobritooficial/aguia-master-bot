@@ -7,12 +7,13 @@ from flask import Flask, jsonify, render_template_string
 
 from exchange_binance import get_binance_testnet_diagnostic
 
+
 app = Flask(__name__)
 
 
 APP_NAME = "ÁGUIA MASTER BOT"
 APP_MODE = "OBSERVADOR EDUCACIONAL"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 BINANCE_FUTURES_PUBLIC_BASE = "https://fapi.binance.com"
 REQUEST_TIMEOUT = 10
@@ -316,7 +317,6 @@ def analyze_candles(candles):
             "description": "Poucos candles.",
         }
 
-    last_5 = candles[-5:]
     last_3 = candles[-3:]
     last = candles[-1]
 
@@ -721,7 +721,6 @@ def analyze_asset(ticker, btc_context):
     )
 
     risk_engine = build_risk_engine(score_data, direction_data, btc_context)
-
     educational_3x = build_educational_3x(score_data, direction_data)
 
     return {
@@ -806,6 +805,7 @@ def build_report():
     started = time.time()
 
     btc_context = analyze_btc_context()
+    binance_testnet = get_binance_testnet_diagnostic()
     tickers = get_24h_tickers()
 
     assets = []
@@ -868,6 +868,7 @@ def build_report():
         "summary": summary,
         "general_decision": general_decision,
         "btc_context": btc_context,
+        "binance_testnet": binance_testnet,
         "top_opportunities": top_opportunities,
         "setup_radar": setup_radar,
         "assets": valid_assets,
@@ -1047,11 +1048,6 @@ HTML = """
             flex-wrap: wrap;
         }
 
-        .score {
-            font-size: 26px;
-            font-weight: 900;
-        }
-
         .list-item {
             margin: 6px 0;
         }
@@ -1184,6 +1180,94 @@ HTML = """
             </div>
 
             <p>{{ btc_context.message }}</p>
+        </div>
+
+        <div class="card border-{% if binance_testnet.get('connected') %}green{% else %}red{% endif %}">
+            <h2>Binance Futures Testnet</h2>
+
+            {% if binance_testnet.get('connected') %}
+                <span class="pill green">CONECTADO</span>
+            {% else %}
+                <span class="pill red">NÃO CONECTADO</span>
+            {% endif %}
+
+            <span class="pill blue">CORRETORA-ALVO: BINANCE FUTURES</span>
+            <span class="pill red">EXECUÇÃO AUTOMÁTICA BLOQUEADA</span>
+
+            <div class="grid">
+                <div class="box col-3">
+                    <strong>Ambiente:</strong><br>
+                    {{ binance_testnet.get('environment', 'N/A') }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>API Key:</strong><br>
+                    {% if binance_testnet.get('has_api_key') %}Detectada{% else %}Não detectada{% endif %}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Secret Key:</strong><br>
+                    {% if binance_testnet.get('has_api_secret') %}Detectada{% else %}Não detectada{% endif %}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Testnet:</strong><br>
+                    {{ binance_testnet.get('use_testnet') }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Trading:</strong><br>
+                    {{ binance_testnet.get('trading_enabled') }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Human Confirm:</strong><br>
+                    {{ binance_testnet.get('human_confirm_required') }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Segurança:</strong><br>
+                    {{ binance_testnet.get('safety_status', 'N/A') }}
+                </div>
+
+                <div class="box col-3">
+                    <strong>Ordens:</strong><br>
+                    {% if binance_testnet.get('orders_enabled_now') %}Liberadas{% else %}Bloqueadas{% endif %}
+                </div>
+            </div>
+
+            <p><strong>Mensagem:</strong> {{ binance_testnet.get('message', 'Sem mensagem.') }}</p>
+
+            {% if binance_testnet.get('balance') %}
+                <div class="note">
+                    <strong>Saldo USDT Testnet:</strong><br>
+                    Saldo: {{ binance_testnet.get('balance', {}).get('balance', 0) }} |
+                    Disponível: {{ binance_testnet.get('balance', {}).get('availableBalance', 0) }} |
+                    Carteira: {{ binance_testnet.get('balance', {}).get('crossWalletBalance', 0) }}
+                </div>
+            {% endif %}
+
+            {% if binance_testnet.get('positions') %}
+                <div class="note">
+                    <strong>Posições abertas:</strong>
+                    {{ binance_testnet.get('positions', {}).get('count', 0) }}
+                </div>
+            {% endif %}
+
+            {% if binance_testnet.get('open_orders') %}
+                <div class="note">
+                    <strong>Ordens abertas:</strong>
+                    {{ binance_testnet.get('open_orders', {}).get('count', 0) }}
+                </div>
+            {% endif %}
+
+            {% if not binance_testnet.get('connected') %}
+                <div class="alert">
+                    <strong>Atenção:</strong>
+                    a Binance Futures Testnet está configurada, mas o servidor atual pode estar bloqueado pela Binance por restrição de localização.
+                    Mesmo assim, as chaves foram detectadas e a execução automática continua bloqueada.
+                </div>
+            {% endif %}
         </div>
 
         <div class="card">
@@ -1342,8 +1426,9 @@ HTML = """
             <h2>Segurança Operacional</h2>
 
             <p>
-                Este painel é apenas educacional. Ele não envia ordem, não usa chave de API,
-                não acessa saldo, não altera posições e não executa compra ou venda.
+                Este painel é apenas educacional. Ele não envia ordem automática,
+                não executa compra ou venda e mantém qualquer operação bloqueada
+                enquanto a confirmação humana não for implementada.
             </p>
 
             <div class="alert">
@@ -1354,6 +1439,7 @@ HTML = """
         <p class="muted">
             Links rápidos:
             <a href="/api/report">API JSON</a> |
+            <a href="/api/binance-testnet">Binance Testnet</a> |
             <a href="/health">Health</a> |
             <a href="/dashboard">Dashboard</a>
         </p>
@@ -1401,6 +1487,7 @@ def home():
             <p>Robô observador educacional online.</p>
             <p><a href="/dashboard">Abrir Dashboard</a></p>
             <p><a href="/api/report">Ver API JSON</a></p>
+            <p><a href="/api/binance-testnet">Ver Binance Testnet</a></p>
             <p><a href="/health">Ver Health</a></p>
         </body>
     </html>
@@ -1416,6 +1503,7 @@ def dashboard():
         summary=report["summary"],
         general_decision=report["general_decision"],
         btc_context=report["btc_context"],
+        binance_testnet=report["binance_testnet"],
         top_opportunities=report["top_opportunities"],
         setup_radar=report["setup_radar"],
         assets=report["assets"],
@@ -1425,6 +1513,12 @@ def dashboard():
 @app.route("/api/report")
 def api_report():
     return jsonify(build_report())
+
+
+@app.route("/api/binance-testnet")
+def api_binance_testnet():
+    diagnostic = get_binance_testnet_diagnostic()
+    return jsonify(diagnostic)
 
 
 @app.route("/health")
@@ -1442,10 +1536,6 @@ def health():
         }
     )
 
-@app.route("/api/binance-testnet")
-def api_binance_testnet():
-    diagnostic = get_binance_testnet_diagnostic()
-    return jsonify(diagnostic)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
