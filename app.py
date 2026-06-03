@@ -1536,6 +1536,70 @@ def health():
         }
     )
 
+@app.route("/api/order-plan")
+def api_order_plan():
+    """
+    Gera uma proposta segura de ordem usando o order_planner.py.
+    Esta rota NÃO executa ordem.
+    Ela apenas prepara o plano em modo PREPARE_ONLY.
+    """
+    import json
+    import subprocess
+    import sys
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "order_planner.py"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        if result.returncode != 0:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Falha ao executar order_planner.py",
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+                    "trading_enabled": False,
+                    "testnet_orders_enabled": False,
+                }
+            ), 500
+
+        try:
+            plan = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "order_planner.py não retornou JSON válido",
+                    "raw_output": result.stdout,
+                    "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+                    "trading_enabled": False,
+                    "testnet_orders_enabled": False,
+                }
+            ), 500
+
+        plan["route"] = "/api/order-plan"
+        plan["execution_status"] = "NÃO EXECUTADO"
+        plan["safety_note"] = (
+            "Plano gerado em modo seguro. Nenhuma ordem foi enviada para a Binance."
+        )
+
+        return jsonify(plan)
+
+    except Exception as exc:
+        return jsonify(
+            {
+                "ok": False,
+                "error": str(exc),
+                "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+                "trading_enabled": False,
+                "testnet_orders_enabled": False,
+            }
+        ), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
