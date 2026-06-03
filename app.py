@@ -1423,6 +1423,131 @@ HTML = """
         </div>
 
         <div class="card">
+<div class="card" id="safe-order-plan-card">
+    <h2>Proposta Segura de Ordem</h2>
+    <p class="muted">
+        Este bloco mostra uma proposta preparada em modo seguro. Nenhuma ordem é executada automaticamente.
+    </p>
+
+    <div class="grid">
+        <div class="box col-3">
+            <strong>Status:</strong><br>
+            <span id="op-action">Carregando...</span>
+        </div>
+        <div class="box col-3">
+            <strong>Execução:</strong><br>
+            <span id="op-execution">Carregando...</span>
+        </div>
+        <div class="box col-3">
+            <strong>Segurança:</strong><br>
+            <span id="op-safety">Carregando...</span>
+        </div>
+        <div class="box col-3">
+            <strong>Confirmação humana:</strong><br>
+            <span id="op-human">Carregando...</span>
+        </div>
+
+        <div class="box col-3">
+            <strong>Ativo:</strong><br>
+            <span id="op-symbol">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Direção:</strong><br>
+            <span id="op-side">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Tipo:</strong><br>
+            <span id="op-type">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Entrada:</strong><br>
+            <span id="op-entry">-</span>
+        </div>
+
+        <div class="box col-3">
+            <strong>Margem:</strong><br>
+            <span id="op-margin">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Alavancagem:</strong><br>
+            <span id="op-leverage">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Valor nocional:</strong><br>
+            <span id="op-notional">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Quantidade:</strong><br>
+            <span id="op-quantity">-</span>
+        </div>
+
+        <div class="box col-3">
+            <strong>Alvo parcial:</strong><br>
+            <span id="op-take-profit">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Saída parcial:</strong><br>
+            <span id="op-partial-close">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Invalidação:</strong><br>
+            <span id="op-invalidation">-</span>
+        </div>
+        <div class="box col-3">
+            <strong>Reduce Only parcial:</strong><br>
+            <span id="op-reduce-only">-</span>
+        </div>
+    </div>
+
+    <p id="op-message" class="notice">
+        Carregando plano seguro...
+    </p>
+
+    <p class="danger">
+        Regra central: este bloco é apenas educativo e de preparação. Nenhuma ordem real ou testnet deve ser enviada sem confirmação humana.
+    </p>
+</div>
+
+<script>
+(function () {
+    function setText(id, value) {
+        var element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+        }
+    }
+
+    fetch("/api/order-plan")
+        .then(function (response) {
+            return response.json();
+        })
+        .then(function (plan) {
+            setText("op-action", plan.action || "-");
+            setText("op-execution", plan.execution_status || "-");
+            setText("op-safety", plan.safety_status || "-");
+            setText("op-human", plan.human_confirmation_required ? "Obrigatória" : "Não");
+            setText("op-symbol", plan.symbol || "-");
+            setText("op-side", plan.side || "-");
+            setText("op-type", plan.order_type || "-");
+            setText("op-entry", plan.entry_price || "-");
+            setText("op-margin", String(plan.margin_usdt || "-") + " USDT");
+            setText("op-leverage", String(plan.leverage || "-") + "x");
+            setText("op-notional", String(plan.notional_usdt || "-") + " USDT");
+            setText("op-quantity", plan.quantity || "-");
+            setText("op-take-profit", plan.partial_take_profit_price || "-");
+            setText("op-partial-close", String(plan.partial_close_percent || "-") + "%");
+            setText("op-invalidation", plan.invalidation_price || "-");
+            setText("op-reduce-only", plan.reduce_only_for_partial_exit ? "Sim" : "Não");
+            setText("op-message", plan.safety_note || plan.message || "Plano seguro carregado.");
+        })
+        .catch(function (error) {
+            setText("op-action", "ERRO");
+            setText("op-execution", "NÃO EXECUTADO");
+            setText("op-safety", "BLOQUEADO PARA EXECUÇÃO");
+            setText("op-message", "Não foi possível carregar a proposta segura de ordem: " + error);
+        });
+})();
+</script>
             <h2>Segurança Operacional</h2>
 
             <p>
