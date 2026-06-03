@@ -853,7 +853,33 @@ def build_safe_order_plan():
         "safety_note": "Plano gerado em modo seguro. Nenhuma ordem foi enviada para a Binance.",
         "message": "Plano preparado em modo seguro. Nenhuma ordem deve ser executada automaticamente. Exige confirmação humana e validação final antes de qualquer teste.",
         "warnings": [],
-    }
+        }
+
+
+@app.route("/api/human-confirm")
+def api_human_confirm():
+    """
+    Confirmação humana simulada e segura.
+
+    Esta rota NÃO executa ordem.
+    Ela apenas registra que o usuário confirmou manualmente o plano,
+    mantendo a execução bloqueada até uma futura validação do motor de risco.
+    """
+    return jsonify({
+        "ok": True,
+        "route": "/api/human-confirm",
+        "action": "HUMAN_CONFIRMATION_RECEIVED",
+        "execution_status": "NÃO EXECUTADO",
+        "human_confirmation": True,
+        "risk_engine_required": True,
+        "trading_enabled": False,
+        "testnet_orders_enabled": False,
+        "real_orders_enabled": False,
+        "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+        "message": "Confirmação humana recebida. Ordem ainda bloqueada. Próxima etapa: validação final do motor de risco.",
+        "safety_note": "Esta confirmação não envia ordem para a Binance. Ela apenas registra a aprovação manual do plano.",
+        "next_step": "VALIDAÇÃO_FINAL_DO_MOTOR_DE_RISCO"
+    })
 
 
 def css_badge_class(color):
