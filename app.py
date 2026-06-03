@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 APP_NAME = "ÁGUIA MASTER BOT"
 APP_MODE = "OBSERVADOR EDUCACIONAL"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 BINANCE_FUTURES_PUBLIC_BASE = "https://fapi.binance.com"
 REQUEST_TIMEOUT = 10
@@ -667,7 +667,6 @@ def build_educational_3x(score_data, direction_data):
         "reduce_only": "SIM, obrigatório em saída parcial.",
     }
 
-
 def analyze_asset(ticker, btc_context):
     symbol = ticker["symbol"]
 
@@ -677,19 +676,13 @@ def analyze_asset(ticker, btc_context):
     if not candles_4h or not candles_5m:
         return {
             "symbol": symbol,
-            "status": "ERRO",
-            "message": "Dados insuficientes.",
-            "score": 0,
+            "ok": False,
+            "error": "Não foi possível carregar candles.",
         }
-
-    price = candles_5m[-1]["close"]
 
     trend_4h = analyze_trend(candles_4h)
     trend_5m = analyze_trend(candles_5m)
-
-    levels_4h = analyze_levels(candles_4h, 50)
-    levels_5m = analyze_levels(candles_5m, 40)
-
+    levels_5m = analyze_levels(candles_5m)
     volume = analyze_volume(candles_5m)
     candles = analyze_candles(candles_5m)
 
@@ -712,7 +705,7 @@ def analyze_asset(ticker, btc_context):
         btc_context,
     )
 
-    setup_phase = classify_setup_phase(
+    phase = classify_setup_phase(
         score_data,
         direction_data,
         levels_5m,
@@ -720,197 +713,218 @@ def analyze_asset(ticker, btc_context):
         candles,
     )
 
-    risk_engine = build_risk_engine(score_data, direction_data, btc_context)
+    risk = build_risk_engine(score_data, direction_data, btc_context)
     educational_3x = build_educational_3x(score_data, direction_data)
 
     return {
         "symbol": symbol,
-        "status": "OK",
-        "price": price,
-        "change_percent": ticker["change_percent"],
+        "ok": True,
+        "price": ticker["last_price"],
         "quote_volume": ticker["quote_volume"],
+        "change_percent": ticker["change_percent"],
         "trend_4h": trend_4h,
         "trend_5m": trend_5m,
-        "levels_4h": levels_4h,
         "levels_5m": levels_5m,
         "volume": volume,
         "candles": candles,
-        "direction": direction_data["direction"],
-        "long_points": direction_data["long_points"],
-        "short_points": direction_data["short_points"],
-        "reasons": direction_data["reasons"],
-        "blocks": direction_data["blocks"],
-        "score": score_data["score"],
-        "score_label": score_data["label"],
-        "hard_blocks": score_data["hard_blocks"],
-        "warnings": score_data["warnings"],
-        "setup_phase": setup_phase,
-        "risk_engine": risk_engine,
+        "direction": direction_data,
+        "score": score_data,
+        "phase": phase,
+        "risk": risk,
         "educational_3x": educational_3x,
     }
 
 
-def build_general_decision(assets, btc_context):
-    valid_assets = [a for a in assets if a.get("status") == "OK"]
-
-    possible_setups = [
-        a
-        for a in valid_assets
-        if a["setup_phase"]["phase"] == "POSSÍVEL SETUP EDUCACIONAL"
-    ]
-
-    forming_setups = [
-        a
-        for a in valid_assets
-        if a["setup_phase"]["phase"] == "SETUP EM FORMAÇÃO"
-    ]
-
-    if btc_context["pressure"] in ["COMPRADORA FORTE", "VENDEDORA FORTE"]:
-        return {
-            "status": "CAUTELA MÁXIMA",
-            "reason": "BTC está com pressão forte no curto prazo.",
-            "action": "Não forçar entrada. Aguardar estabilização ou confirmação clara.",
-            "color": "red",
-        }
-
-    if possible_setups:
-        best = sorted(possible_setups, key=lambda x: x["score"], reverse=True)[0]
-
-        return {
-            "status": "OBSERVAR SETUP",
-            "reason": f"{best['symbol']} apresenta confluência educacional, mas sem execução automática.",
-            "action": "Aguardar confirmação humana, reteste e validação de risco.",
-            "color": "green",
-        }
-
-    if forming_setups:
-        best = sorted(forming_setups, key=lambda x: x["score"], reverse=True)[0]
-
-        return {
-            "status": "SETUP EM FORMAÇÃO",
-            "reason": f"{best['symbol']} está formando cenário, mas ainda não confirmou.",
-            "action": "Monitorar volume, candle de confirmação e posição no canal.",
-            "color": "yellow",
-        }
-
-    return {
-        "status": "NÃO OPERAR",
-        "reason": "Nenhuma oportunidade operacional forte encontrada neste ciclo.",
-        "action": "Preservar capital. Não operar no meio do canal, sem direção ou sem volume.",
-        "color": "red",
-    }
-
-
-def build_report():
+def build_cycle_report():
     started = time.time()
 
     btc_context = analyze_btc_context()
-    binance_testnet = get_binance_testnet_diagnostic()
     tickers = get_24h_tickers()
 
-    assets = []
+    analyses = []
 
     for ticker in tickers:
-        asset = analyze_asset(ticker, btc_context)
-        assets.append(asset)
+        analyses.append(analyze_asset(ticker, btc_context))
 
-    valid_assets = [a for a in assets if a.get("status") == "OK"]
+    valid = [a for a in analyses if a.get("ok")]
+
+    possible_longs = [
+        a for a in valid if a["direction"]["direction"] == "POSSÍVEL LONG"
+    ]
+
+    possible_shorts = [
+        a for a in valid if a["direction"]["direction"] == "POSSÍVEL SHORT"
+    ]
+
+    setups_in_formation = [
+        a for a in valid if a["phase"]["phase"] == "SETUP EM FORMAÇÃO"
+    ]
 
     top_opportunities = sorted(
-        valid_assets,
-        key=lambda x: x.get("score", 0),
+        valid,
+        key=lambda x: x["score"]["score"],
         reverse=True,
     )[:5]
 
-    setup_radar = [
-        a
-        for a in valid_assets
-        if a["setup_phase"]["phase"] in [
-            "POSSÍVEL SETUP EDUCACIONAL",
-            "SETUP EM FORMAÇÃO",
-            "MEIO DO CANAL",
-        ]
+    strong_setups = [
+        a for a in valid if a["score"]["score"] >= 70 and not a["score"]["hard_blocks"]
     ]
 
-    setup_radar = sorted(
-        setup_radar,
-        key=lambda x: x.get("score", 0),
-        reverse=True,
-    )[:7]
+    if strong_setups:
+        decision = {
+            "status": "OBSERVAR SETUP",
+            "color": "yellow",
+            "reason": "Existem ativos com possível estrutura educacional, mas ainda exige confirmação humana.",
+            "action": "Monitorar volume, candle de confirmação e posição no canal.",
+        }
+    else:
+        decision = {
+            "status": "NÃO OPERAR",
+            "color": "red",
+            "reason": "Nenhuma oportunidade operacional forte encontrada neste ciclo.",
+            "action": "Preservar capital. Não operar no meio do canal, sem direção ou sem volume.",
+        }
 
-    general_decision = build_general_decision(valid_assets, btc_context)
+    duration = safe_round(time.time() - started, 2)
 
-    possible_longs = len([a for a in valid_assets if a.get("direction") == "POSSÍVEL LONG"])
-    possible_shorts = len([a for a in valid_assets if a.get("direction") == "POSSÍVEL SHORT"])
-    waiting = len([a for a in valid_assets if a.get("direction") == "NONE"])
-
-    duration = round(time.time() - started, 2)
-
-    summary = {
-        "app_name": APP_NAME,
+    return {
+        "app": APP_NAME,
         "mode": APP_MODE,
         "version": APP_VERSION,
         "updated_at": now_utc(),
         "selection_mode": "AUTO_VOLUME_WITH_WHITE_LIST",
-        "white_list_enabled": True,
-        "white_list_count": len(WHITE_LIST),
-        "assets_analyzed": len(valid_assets),
+        "white_list": True,
+        "duration": duration,
+        "btc_context": btc_context,
+        "assets_analyzed": len(valid),
         "possible_longs": possible_longs,
         "possible_shorts": possible_shorts,
-        "waiting": waiting,
-        "duration_seconds": duration,
-        "orders_enabled": False,
-        "real_orders_enabled": False,
-        "testnet_orders_enabled": False,
+        "setups_in_formation": setups_in_formation,
+        "top_opportunities": top_opportunities,
+        "analyses": valid,
+        "decision": decision,
+        "safety": {
+            "orders_enabled": False,
+            "real_orders_enabled": False,
+            "testnet_orders_enabled": False,
+            "message": "Este painel é apenas educacional. Nenhuma ordem automática é executada.",
+        },
     }
+
+
+def build_safe_order_plan():
+    """
+    Plano fixo e seguro apenas para visualização.
+    Não envia ordem para Binance.
+    Não executa compra ou venda.
+    Serve somente para validar estrutura visual e lógica de segurança.
+    """
+
+    entry_price = 3000.0
+    margin_usdt = 25.0
+    leverage = 20
+    notional_usdt = margin_usdt * leverage
+
+    quantity = safe_round(notional_usdt / entry_price, 3)
 
     return {
-        "summary": summary,
-        "general_decision": general_decision,
-        "btc_context": btc_context,
-        "binance_testnet": binance_testnet,
-        "top_opportunities": top_opportunities,
-        "setup_radar": setup_radar,
-        "assets": valid_assets,
+        "ok": True,
+        "route": "/api/order-plan",
+        "action": "PREPARE_ONLY",
+        "execution_status": "NÃO EXECUTADO",
+        "environment": "BINANCE_FUTURES_TESTNET",
+        "symbol": "ETHUSDT",
+        "side": "BUY",
+        "order_type": "LIMIT",
+        "entry_price": entry_price,
+        "margin_usdt": margin_usdt,
+        "leverage": leverage,
+        "notional_usdt": notional_usdt,
+        "quantity": quantity,
+        "partial_take_profit_price": 3060,
+        "partial_close_percent": 50,
+        "invalidation_price": 2900,
+        "reduce_only_for_entry": False,
+        "reduce_only_for_partial_exit": True,
+        "human_confirmation_required": True,
+        "trading_enabled": False,
+        "testnet_orders_enabled": False,
+        "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+        "safety_note": "Plano gerado em modo seguro. Nenhuma ordem foi enviada para a Binance.",
+        "message": "Plano preparado em modo seguro. Nenhuma ordem deve ser executada automaticamente. Exige confirmação humana e validação final antes de qualquer teste.",
+        "warnings": [],
     }
 
 
-HTML = """
-<!DOCTYPE html>
+def css_badge_class(color):
+    if color == "green":
+        return "badge-green"
+    if color == "yellow":
+        return "badge-yellow"
+    if color == "red":
+        return "badge-red"
+    return "badge-gray"
+
+
+def safe_text(value, default="-"):
+    if value is None:
+        return default
+    return str(value)
+
+
+HTML_TEMPLATE = """
+<!doctype html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>ÁGUIA MASTER BOT</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <title>{{ report.app }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
-        body {
-            margin: 0;
-            background: #0b1020;
-            color: #f8fafc;
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 16px;
+        :root {
+            --bg: #070d1c;
+            --panel: #1c293d;
+            --panel-2: #0e1729;
+            --text: #f8fafc;
+            --muted: #9fb3c8;
+            --line: #334155;
+            --blue: #2563eb;
+            --green: #22c55e;
+            --yellow: #f59e0b;
+            --red: #ef4444;
+            --gray: #64748b;
         }
 
-        .page {
-            max-width: 1180px;
-            margin: auto;
-            padding: 36px 18px 60px;
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 15px;
+        }
+
+        .container {
+            width: min(980px, calc(100% - 28px));
+            margin: 40px auto;
         }
 
         h1 {
-            font-size: 38px;
-            margin-bottom: 8px;
+            font-size: 34px;
+            margin: 0 0 8px 0;
         }
 
         h2 {
-            font-size: 26px;
-            margin-top: 0;
+            margin: 0 0 16px 0;
+            font-size: 22px;
         }
 
         h3 {
-            font-size: 20px;
-            margin-bottom: 8px;
+            margin: 0 0 10px 0;
+            font-size: 17px;
         }
 
         p {
@@ -918,739 +932,762 @@ HTML = """
         }
 
         .subtitle {
-            color: #cbd5e1;
-            font-size: 18px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .updated {
+            color: var(--muted);
+            margin-bottom: 22px;
+            font-size: 13px;
         }
 
         .card {
-            background: #1e293b;
-            border-radius: 18px;
-            padding: 24px;
-            margin: 22px 0;
-            box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+            background: var(--panel);
+            border-radius: 14px;
+            padding: 22px;
+            margin: 18px 0;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .card-red {
+            border-left: 5px solid var(--red);
+        }
+
+        .card-yellow {
+            border-left: 5px solid var(--yellow);
+        }
+
+        .card-green {
+            border-left: 5px solid var(--green);
         }
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(12, 1fr);
-            gap: 14px;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
         }
 
         .box {
-            background: #0f172a;
-            border-radius: 12px;
-            padding: 14px;
-            overflow: hidden;
+            background: var(--panel-2);
+            border-radius: 9px;
+            padding: 12px;
+            min-height: 58px;
         }
 
-        .col-3 {
-            grid-column: span 3;
+        .box strong {
+            display: block;
+            font-size: 13px;
+            color: #ffffff;
+            margin-bottom: 4px;
         }
 
-        .col-4 {
-            grid-column: span 4;
-        }
-
-        .col-6 {
-            grid-column: span 6;
-        }
-
-        .col-12 {
-            grid-column: span 12;
-        }
-
-        .pill {
-            display: inline-block;
-            border-radius: 999px;
-            padding: 8px 12px;
-            margin: 4px 4px 4px 0;
-            background: #0f172a;
-            color: #e2e8f0;
-            font-weight: bold;
-            font-size: 14px;
-        }
-
-        .green {
-            background: #16a34a;
-            color: white;
-        }
-
-        .yellow {
-            background: #f59e0b;
-            color: #111827;
-        }
-
-        .red {
-            background: #ef4444;
-            color: white;
-        }
-
-        .gray {
-            background: #64748b;
-            color: white;
-        }
-
-        .blue {
-            background: #2563eb;
-            color: white;
-        }
-
-        .border-green {
-            border-left: 7px solid #16a34a;
-        }
-
-        .border-yellow {
-            border-left: 7px solid #f59e0b;
-        }
-
-        .border-red {
-            border-left: 7px solid #ef4444;
-        }
-
-        .border-gray {
-            border-left: 7px solid #64748b;
+        .box span {
+            color: #ffffff;
         }
 
         .muted {
-            color: #94a3b8;
+            color: var(--muted);
         }
 
-        .alert {
-            background: rgba(239,68,68,0.15);
-            border: 1px solid rgba(239,68,68,0.35);
-            color: #fecaca;
-            padding: 14px;
-            border-radius: 12px;
-            margin-top: 12px;
+        .small {
+            font-size: 12px;
         }
 
-        .note {
-            background: rgba(59,130,246,0.15);
-            border: 1px solid rgba(59,130,246,0.35);
-            color: #bfdbfe;
-            padding: 14px;
-            border-radius: 12px;
-            margin-top: 12px;
+        .badge {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 12px;
+            color: #fff;
+            margin: 4px 6px 4px 0;
+        }
+
+        .badge-green {
+            background: var(--green);
+        }
+
+        .badge-yellow {
+            background: var(--yellow);
+        }
+
+        .badge-red {
+            background: var(--red);
+        }
+
+        .badge-gray {
+            background: var(--gray);
+        }
+
+        .badge-blue {
+            background: var(--blue);
         }
 
         .asset {
-            background: #1e293b;
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 16px;
+            border-left: 4px solid var(--line);
+            background: rgba(15, 23, 42, 0.55);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 14px 0;
         }
 
-        .asset-title {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
+        .asset.green {
+            border-left-color: var(--green);
         }
 
-        .list-item {
-            margin: 6px 0;
+        .asset.yellow {
+            border-left-color: var(--yellow);
+        }
+
+        .asset.red {
+            border-left-color: var(--red);
+        }
+
+        .asset.gray {
+            border-left-color: var(--gray);
+        }
+
+        .alert {
+            border: 1px solid rgba(239, 68, 68, 0.8);
+            background: rgba(239, 68, 68, 0.13);
+            color: #fecaca;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin: 12px 0;
+        }
+
+        .note {
+            border: 1px solid rgba(37, 99, 235, 0.8);
+            background: rgba(37, 99, 235, 0.13);
+            color: #bfdbfe;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin: 12px 0;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        li {
+            margin: 4px 0;
         }
 
         a {
             color: #93c5fd;
         }
 
-        @media (max-width: 900px) {
-            .col-3,
-            .col-4,
-            .col-6 {
-                grid-column: span 12;
+        .footer {
+            margin-top: 20px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        @media (max-width: 760px) {
+            .grid,
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                margin: 18px auto;
             }
 
             h1 {
-                font-size: 30px;
-            }
-
-            h2 {
-                font-size: 22px;
-            }
-
-            body {
-                font-size: 15px;
+                font-size: 28px;
             }
         }
     </style>
 </head>
 
 <body>
-    <div class="page">
+<div class="container">
 
-        <h1>🦅 ÁGUIA MASTER BOT</h1>
-        <p class="subtitle">
-            Robô observador do Método Águia Cripto — modo seguro, educacional e sem execução de ordens.
+    <h1>🦅 {{ report.app }}</h1>
+    <p class="subtitle">Robô observador do Método Águia Cripto — modo seguro, educacional e sem execução de ordens.</p>
+    <p class="updated">Última atualização: {{ report.updated_at }}</p>
+
+    <div class="card">
+        <h2>Resumo do Ciclo</h2>
+
+        <div class="grid">
+            <div class="box">
+                <strong>Modo seleção:</strong>
+                <span>{{ report.selection_mode }}</span>
+            </div>
+
+            <div class="box">
+                <strong>Lista branca:</strong>
+                <span>{{ report.white_list }}</span>
+            </div>
+
+            <div class="box">
+                <strong>Ativos analisados:</strong>
+                <span>{{ report.assets_analyzed }}</span>
+            </div>
+
+            <div class="box">
+                <strong>Duração:</strong>
+                <span>{{ report.duration }}s</span>
+            </div>
+
+            <div class="box">
+                <strong>Possíveis Longs:</strong>
+                <span>{{ report.possible_longs|length }}</span>
+            </div>
+
+            <div class="box">
+                <strong>Possíveis Shorts:</strong>
+                <span>{{ report.possible_shorts|length }}</span>
+            </div>
+
+            <div class="box">
+                <strong>Aguardando:</strong>
+                <span>{{ report.setups_in_formation|length }}</span>
+            </div>
+
+            <div class="box">
+                <strong>Versão:</strong>
+                <span>{{ report.version }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card card-{{ report.decision.color }}">
+        <h2>Decisão Geral do Ciclo</h2>
+
+        <span class="badge badge-{{ report.decision.color }}">{{ report.decision.status }}</span>
+
+        <p><strong>Motivo:</strong> {{ report.decision.reason }}</p>
+        <p><strong>Ação recomendada:</strong> {{ report.decision.action }}</p>
+
+        <p class="muted small">
+            Regra de segurança: este robô está em modo observador. Nenhuma ordem real ou testnet é executada automaticamente.
         </p>
-        <p class="muted">Última atualização: {{ summary.updated_at }}</p>
+    </div>
 
-        <div class="card">
-            <h2>Resumo do Ciclo</h2>
+    <div class="card">
+        <h2>Contexto BTC</h2>
 
-            <div class="grid">
-                <div class="box col-3">
-                    <strong>Modo seleção:</strong><br>
-                    {{ summary.selection_mode }}
-                </div>
+        <div class="grid">
+            <div class="box">
+                <strong>Preço:</strong>
+                <span>{{ format_price(report.btc_context.price) }}</span>
+            </div>
 
-                <div class="box col-3">
-                    <strong>Lista branca:</strong><br>
-                    {{ summary.white_list_enabled }}
-                </div>
+            <div class="box">
+                <strong>4H:</strong>
+                <span>{{ report.btc_context.trend_4h }}</span>
+            </div>
 
-                <div class="box col-3">
-                    <strong>Ativos analisados:</strong><br>
-                    {{ summary.assets_analyzed }}
-                </div>
+            <div class="box">
+                <strong>5M:</strong>
+                <span>{{ report.btc_context.trend_5m }}</span>
+            </div>
 
-                <div class="box col-3">
-                    <strong>Duração:</strong><br>
-                    {{ summary.duration_seconds }}s
-                </div>
+            <div class="box">
+                <strong>Pressão:</strong>
+                <span>{{ report.btc_context.pressure }}</span>
+            </div>
 
-                <div class="box col-3">
-                    <strong>Possíveis Longs:</strong><br>
-                    {{ summary.possible_longs }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Possíveis Shorts:</strong><br>
-                    {{ summary.possible_shorts }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Aguardando:</strong><br>
-                    {{ summary.waiting }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Versão:</strong><br>
-                    {{ summary.version }}
-                </div>
+            <div class="box">
+                <strong>Variação curta:</strong>
+                <span>{{ report.btc_context.short_change_percent }}%</span>
             </div>
         </div>
 
-        <div class="card border-{{ general_decision.color }}">
-            <h2>Decisão Geral do Ciclo</h2>
+        <p>{{ report.btc_context.message }}</p>
+    </div>
 
-            <span class="pill {{ general_decision.color }}">
-                {{ general_decision.status }}
-            </span>
+    <div class="card {{ 'card-green' if binance.connected else 'card-red' }}">
+        <h2>Binance Futures Testnet</h2>
 
-            <p><strong>Motivo:</strong> {{ general_decision.reason }}</p>
-            <p><strong>Ação recomendada:</strong> {{ general_decision.action }}</p>
+        {% if binance.connected %}
+            <span class="badge badge-green">CONECTADO</span>
+        {% else %}
+            <span class="badge badge-red">NÃO CONECTADO</span>
+        {% endif %}
 
-            <p class="muted">
-                Regra de segurança: este robô está em modo observador.
-                Nenhuma ordem real ou testnet é executada automaticamente.
-            </p>
-        </div>
+        <span class="badge badge-blue">CORRETORA API: BINANCE FUTURES</span>
+        <span class="badge badge-red">EXECUÇÃO AUTOMÁTICA BLOQUEADA</span>
 
-        <div class="card">
-            <h2>Contexto BTC</h2>
-
-            <div class="grid">
-                <div class="box col-3">
-                    <strong>Preço:</strong><br>
-                    {{ btc_context.price | price }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>4H:</strong><br>
-                    {{ btc_context.trend_4h }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>5M:</strong><br>
-                    {{ btc_context.trend_5m }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Pressão:</strong><br>
-                    {{ btc_context.pressure }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Variação curta:</strong><br>
-                    {{ btc_context.short_change_percent }}%
-                </div>
+        <div class="grid">
+            <div class="box">
+                <strong>Ambiente:</strong>
+                <span>{{ binance.environment }}</span>
             </div>
 
-            <p>{{ btc_context.message }}</p>
-        </div>
-
-        <div class="card border-{% if binance_testnet.get('connected') %}green{% else %}red{% endif %}">
-            <h2>Binance Futures Testnet</h2>
-
-            {% if binance_testnet.get('connected') %}
-                <span class="pill green">CONECTADO</span>
-            {% else %}
-                <span class="pill red">NÃO CONECTADO</span>
-            {% endif %}
-
-            <span class="pill blue">CORRETORA-ALVO: BINANCE FUTURES</span>
-            <span class="pill red">EXECUÇÃO AUTOMÁTICA BLOQUEADA</span>
-
-            <div class="grid">
-                <div class="box col-3">
-                    <strong>Ambiente:</strong><br>
-                    {{ binance_testnet.get('environment', 'N/A') }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>API Key:</strong><br>
-                    {% if binance_testnet.get('has_api_key') %}Detectada{% else %}Não detectada{% endif %}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Secret Key:</strong><br>
-                    {% if binance_testnet.get('has_api_secret') %}Detectada{% else %}Não detectada{% endif %}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Testnet:</strong><br>
-                    {{ binance_testnet.get('use_testnet') }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Trading:</strong><br>
-                    {{ binance_testnet.get('trading_enabled') }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Human Confirm:</strong><br>
-                    {{ binance_testnet.get('human_confirm_required') }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Segurança:</strong><br>
-                    {{ binance_testnet.get('safety_status', 'N/A') }}
-                </div>
-
-                <div class="box col-3">
-                    <strong>Ordens:</strong><br>
-                    {% if binance_testnet.get('orders_enabled_now') %}Liberadas{% else %}Bloqueadas{% endif %}
-                </div>
+            <div class="box">
+                <strong>API Key:</strong>
+                <span>{{ "Detectada" if binance.has_api_key else "Ausente" }}</span>
             </div>
 
-            <p><strong>Mensagem:</strong> {{ binance_testnet.get('message', 'Sem mensagem.') }}</p>
+            <div class="box">
+                <strong>Secret Key:</strong>
+                <span>{{ "Detectada" if binance.has_api_secret else "Ausente" }}</span>
+            </div>
 
-            {% if binance_testnet.get('balance') %}
-                <div class="note">
-                    <strong>Saldo USDT Testnet:</strong><br>
-                    Saldo: {{ binance_testnet.get('balance', {}).get('balance', 0) }} |
-                    Disponível: {{ binance_testnet.get('balance', {}).get('availableBalance', 0) }} |
-                    Carteira: {{ binance_testnet.get('balance', {}).get('crossWalletBalance', 0) }}
-                </div>
-            {% endif %}
+            <div class="box">
+                <strong>Testnet:</strong>
+                <span>{{ binance.use_testnet }}</span>
+            </div>
 
-            {% if binance_testnet.get('positions') %}
-                <div class="note">
-                    <strong>Posições abertas:</strong>
-                    {{ binance_testnet.get('positions', {}).get('count', 0) }}
-                </div>
-            {% endif %}
+            <div class="box">
+                <strong>Trading:</strong>
+                <span>{{ binance.trading_enabled }}</span>
+            </div>
 
-            {% if binance_testnet.get('open_orders') %}
-                <div class="note">
-                    <strong>Ordens abertas:</strong>
-                    {{ binance_testnet.get('open_orders', {}).get('count', 0) }}
-                </div>
-            {% endif %}
+            <div class="box">
+                <strong>Human Confirm:</strong>
+                <span>{{ binance.human_confirm_required }}</span>
+            </div>
 
-            {% if not binance_testnet.get('connected') %}
-                <div class="alert">
-                    <strong>Atenção:</strong>
-                    a Binance Futures Testnet está configurada, mas o servidor atual pode estar bloqueado pela Binance por restrição de localização.
-                    Mesmo assim, as chaves foram detectadas e a execução automática continua bloqueada.
-                </div>
-            {% endif %}
+            <div class="box">
+                <strong>Segurança:</strong>
+                <span>{{ binance.safety_status }}</span>
+            </div>
+
+            <div class="box">
+                <strong>Ordens:</strong>
+                <span>{{ "Liberadas" if binance.orders_enabled_now else "Bloqueadas" }}</span>
+            </div>
         </div>
 
-        <div class="card">
-            <h2>Radar de Setup em Formação</h2>
-            <p class="muted">
-                Este bloco mostra ativos que ainda não são operação, mas que merecem observação.
-            </p>
+        <p><strong>Mensagem:</strong> {{ binance.message }}</p>
 
-            {% if setup_radar %}
-                {% for item in setup_radar %}
-                    <div class="asset border-{{ item.setup_phase.color }}">
-                        <div class="asset-title">
-                            <h3>{{ item.symbol }}</h3>
-                            <span class="pill {{ item.setup_phase.color }}">
-                                {{ item.setup_phase.phase }}
-                            </span>
-                        </div>
-
-                        <span class="pill blue">Score: {{ item.score }}</span>
-                        <span class="pill">Direção: {{ item.direction }}</span>
-                        <span class="pill">Canal 5M: {{ item.levels_5m.channel_position }}</span>
-                        <span class="pill">Volume: {{ item.volume.status }} — {{ item.volume.ratio }}x</span>
-                        <span class="pill">Candles: {{ item.candles.status }}</span>
-
-                        <p><strong>Ação:</strong> {{ item.setup_phase.action }}</p>
-
-                        {% if item.warnings %}
-                            <p><strong>Alertas:</strong></p>
-                            {% for warning in item.warnings %}
-                                <div class="list-item">⚠️ {{ warning }}</div>
-                            {% endfor %}
-                        {% endif %}
-                    </div>
-                {% endfor %}
-            {% else %}
-                <div class="note">
-                    Nenhum setup em formação encontrado neste ciclo.
-                </div>
-            {% endif %}
+        <div class="note">
+            <strong>Saldo USDT Testnet:</strong><br>
+            Saldo: {{ binance.balance.balance if binance.balance else 0 }} |
+            Disponível: {{ binance.balance.availableBalance if binance.balance else 0 }} |
+            Carteira: {{ binance.balance.crossWalletBalance if binance.balance else 0 }}
         </div>
 
-        <div class="card">
-            <h2>Top Oportunidades do Ciclo</h2>
-
-            {% if top_opportunities %}
-                {% for item in top_opportunities %}
-                    <div class="asset">
-                        <div class="asset-title">
-                            <h3>#{{ loop.index }} {{ item.symbol }}</h3>
-                            <span class="pill {{ item.setup_phase.color }}">
-                                {{ item.setup_phase.phase }}
-                            </span>
-                        </div>
-
-                        <span class="pill blue">Score: {{ item.score }}</span>
-                        <span class="pill">Preço: {{ item.price | price }}</span>
-                        <span class="pill">Direção: {{ item.direction }}</span>
-                        <span class="pill">Confiança: {{ item.score_label }}</span>
-                        <span class="pill">Volume 24h: {{ item.quote_volume | money }}</span>
-
-                        <p><strong>Leitura:</strong> {{ item.setup_phase.action }}</p>
-
-                        {% if item.hard_blocks %}
-                            <p><strong>Pontos de atenção:</strong></p>
-                            {% for block in item.hard_blocks %}
-                                <div class="list-item">⛔ {{ block }}</div>
-                            {% endfor %}
-                        {% endif %}
-
-                        {% if item.warnings %}
-                            <p><strong>Travazinhas de segurança:</strong></p>
-                            {% for warning in item.warnings %}
-                                <div class="list-item">⚠️ {{ warning }}</div>
-                            {% endfor %}
-                        {% endif %}
-                    </div>
-                {% endfor %}
-            {% else %}
-                <div class="note">
-                    Nenhuma oportunidade encontrada neste ciclo.
-                </div>
-            {% endif %}
+        <div class="note">
+            <strong>Posições abertas:</strong>
+            {{ binance.positions.count if binance.positions else 0 }}
         </div>
 
-        <div class="card">
-            <h2>Análise dos Ativos</h2>
+        <div class="note">
+            <strong>Ordens abertas:</strong>
+            {{ binance.open_orders.count if binance.open_orders else 0 }}
+        </div>
 
-            {% for item in assets %}
-                <div class="asset">
-                    <div class="asset-title">
-                        <h3>{{ item.symbol }}</h3>
-                        <span class="pill {{ item.setup_phase.color }}">
-                            {{ item.setup_phase.phase }}
-                        </span>
-                    </div>
+        {% if not binance.connected %}
+            <div class="alert">
+                Atenção: a Binance Futures Testnet está configurada, mas o servidor atual pode estar bloqueado pela Binance por restrição de localização.
+                Mesmo assim, as chaves foram detectadas e a execução automática continua bloqueada.
+            </div>
+        {% endif %}
+    </div>
 
-                    <span class="pill">Preço: {{ item.price | price }}</span>
-                    <span class="pill">Score: {{ item.score }}</span>
-                    <span class="pill">Direção: {{ item.direction }}</span>
-                    <span class="pill">4H: {{ item.trend_4h.status }}</span>
-                    <span class="pill">5M: {{ item.trend_5m.status }}</span>
-                    <span class="pill">Volume: {{ item.volume.status }}</span>
-                    <span class="pill">Canal 5M: {{ item.levels_5m.channel_position }}</span>
+    <div class="card">
+        <h2>Radar de Setup em Formação</h2>
+        <p class="muted small">
+            Este bloco mostra ativos que ainda não são operação, mas que merecem observação.
+        </p>
 
-                    <div class="grid">
-                        <div class="box col-6">
-                            <h3>4H — Contexto</h3>
-                            <p><strong>Tendência:</strong> {{ item.trend_4h.status }}</p>
-                            <p>{{ item.trend_4h.description }}</p>
-                            <p><strong>Suporte:</strong> {{ item.levels_4h.support | price }}</p>
-                            <p><strong>Resistência:</strong> {{ item.levels_4h.resistance | price }}</p>
-                        </div>
+        {% if report.setups_in_formation %}
+            {% for asset in report.setups_in_formation %}
+                <div class="asset {{ asset.phase.color }}">
+                    <h3>{{ asset.symbol }}</h3>
 
-                        <div class="box col-6">
-                            <h3>5M — Gatilho</h3>
-                            <p><strong>Tendência:</strong> {{ item.trend_5m.status }}</p>
-                            <p><strong>Candles:</strong> {{ item.candles.status }}</p>
-                            <p><strong>Rejeição:</strong> {{ item.candles.rejection }}</p>
-                            <p><strong>Volume:</strong> {{ item.volume.status }} — {{ item.volume.ratio }}x</p>
-                        </div>
-                    </div>
+                    <span class="badge badge-blue">Score: {{ asset.score.score }}</span>
+                    <span class="badge badge-gray">Direção: {{ asset.direction.direction }}</span>
+                    <span class="badge badge-gray">Canal 5M: {{ asset.levels_5m.channel_position }}</span>
+                    <span class="badge badge-gray">Volume: {{ asset.volume.status }}</span>
+                    <span class="badge badge-{{ asset.phase.color }}">{{ asset.phase.phase }}</span>
 
-                    {% if item.reasons %}
-                        <p><strong>Motivos positivos:</strong></p>
-                        {% for reason in item.reasons %}
-                            <div class="list-item">✅ {{ reason }}</div>
-                        {% endfor %}
+                    <p><strong>Ação:</strong> {{ asset.phase.action }}</p>
+
+                    {% if asset.score.warnings %}
+                        <p><strong>Alertas:</strong></p>
+                        <ul>
+                            {% for warning in asset.score.warnings %}
+                                <li>⚠️ {{ warning }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="note">Nenhum setup em formação encontrado neste ciclo.</div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>Top Oportunidades do Ciclo</h2>
+
+        {% if report.top_opportunities %}
+            {% for asset in report.top_opportunities %}
+                <div class="asset {{ asset.phase.color }}">
+                    <h3>#{{ loop.index }} {{ asset.symbol }}</h3>
+
+                    <span class="badge badge-blue">Score: {{ asset.score.score }}</span>
+                    <span class="badge badge-gray">Preço: {{ format_price(asset.price) }}</span>
+                    <span class="badge badge-gray">Direção: {{ asset.direction.direction }}</span>
+                    <span class="badge badge-gray">Confiança: {{ asset.score.label }}</span>
+                    <span class="badge badge-gray">Volume 24h: {{ format_money(asset.quote_volume) }}</span>
+                    <span class="badge badge-{{ asset.phase.color }}">{{ asset.phase.phase }}</span>
+
+                    <p><strong>Leitura:</strong> {{ asset.phase.action }}</p>
+
+                    {% if asset.score.hard_blocks %}
+                        <p><strong>Pontos de atenção:</strong></p>
+                        <ul>
+                            {% for block in asset.score.hard_blocks %}
+                                <li>🔴 {{ block }}</li>
+                            {% endfor %}
+                        </ul>
                     {% endif %}
 
-                    {% if item.blocks %}
-                        <p><strong>Bloqueios:</strong></p>
-                        {% for block in item.blocks %}
-                            <div class="list-item">⛔ {{ block }}</div>
-                        {% endfor %}
+                    {% if asset.score.warnings %}
+                        <p><strong>Travamentos de segurança:</strong></p>
+                        <ul>
+                            {% for warning in asset.score.warnings %}
+                                <li>⚠️ {{ warning }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="note">Nenhuma oportunidade encontrada neste ciclo.</div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>Análise dos Ativos</h2>
+
+        {% if report.analyses %}
+            {% for asset in report.analyses %}
+                <div class="asset {{ asset.phase.color }}">
+                    <h3>{{ asset.symbol }}</h3>
+
+                    <span class="badge badge-blue">Preço: {{ format_price(asset.price) }}</span>
+                    <span class="badge badge-gray">Score: {{ asset.score.score }}</span>
+                    <span class="badge badge-gray">Direção: {{ asset.direction.direction }}</span>
+                    <span class="badge badge-gray">4H: {{ asset.trend_4h.status }}</span>
+                    <span class="badge badge-gray">5M: {{ asset.trend_5m.status }}</span>
+                    <span class="badge badge-gray">Volume: {{ asset.volume.status }}</span>
+                    <span class="badge badge-gray">Canal 5M: {{ asset.levels_5m.channel_position }}</span>
+                    <span class="badge badge-{{ asset.phase.color }}">{{ asset.phase.phase }}</span>
+
+                    <div class="grid-2">
+                        <div class="box">
+                            <strong>4H — Contexto</strong>
+                            <p>Tendência: {{ asset.trend_4h.status }}</p>
+                            <p>{{ asset.trend_4h.description }}</p>
+                            <p>Suporte: {{ format_price(asset.levels_5m.support) }}</p>
+                            <p>Resistência: {{ format_price(asset.levels_5m.resistance) }}</p>
+                        </div>
+
+                        <div class="box">
+                            <strong>5M — Gatilho</strong>
+                            <p>Tendência: {{ asset.trend_5m.status }}</p>
+                            <p>Candles: {{ asset.candles.status }}</p>
+                            <p>Rejeição: {{ asset.candles.rejection }}</p>
+                            <p>Volume: {{ asset.volume.status }} — {{ asset.volume.ratio }}x</p>
+                        </div>
+                    </div>
+
+                    <p><strong>Motivos positivos:</strong></p>
+                    {% if asset.direction.reasons %}
+                        <ul>
+                            {% for reason in asset.direction.reasons %}
+                                <li>✅ {{ reason }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="muted">Nenhum motivo forte encontrado.</p>
+                    {% endif %}
+
+                    <p><strong>Diagnóstico:</strong></p>
+                    {% if asset.direction.blocks %}
+                        <ul>
+                            {% for block in asset.direction.blocks %}
+                                <li>🔴 {{ block }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="muted">Sem bloqueios técnicos relevantes.</p>
                     {% endif %}
 
                     <div class="note">
                         <strong>Motor de Risco Educacional:</strong>
-                        {{ item.risk_engine.status }} —
-                        {{ item.risk_engine.risk }} —
-                        {{ item.risk_engine.message }}
+                        {{ asset.risk.status }} — {{ asset.risk.message }}
                     </div>
 
                     <div class="alert">
                         <strong>3X Educacional:</strong>
-                        {{ item.educational_3x.status }} —
-                        {{ item.educational_3x.message }}
-                        <br>
-                        <strong>Reduce Only:</strong> {{ item.educational_3x.reduce_only }}
+                        {{ asset.educational_3x.status }} — {{ asset.educational_3x.message }}<br>
+                        Redução Only: {{ asset.educational_3x.reduce_only }}
                     </div>
                 </div>
             {% endfor %}
-        </div>
-
-        <div class="card">
-<div class="card" id="safe-order-plan-card">
-    <h2>Proposta Segura de Ordem</h2>
-    <p class="muted">
-        Este bloco mostra uma proposta preparada em modo seguro. Nenhuma ordem é executada automaticamente.
-    </p>
-
-    <div class="grid">
-        <div class="box col-3">
-            <strong>Status:</strong><br>
-            <span id="op-action">Carregando...</span>
-        </div>
-        <div class="box col-3">
-            <strong>Execução:</strong><br>
-            <span id="op-execution">Carregando...</span>
-        </div>
-        <div class="box col-3">
-            <strong>Segurança:</strong><br>
-            <span id="op-safety">Carregando...</span>
-        </div>
-        <div class="box col-3">
-            <strong>Confirmação humana:</strong><br>
-            <span id="op-human">Carregando...</span>
-        </div>
-
-        <div class="box col-3">
-            <strong>Ativo:</strong><br>
-            <span id="op-symbol">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Direção:</strong><br>
-            <span id="op-side">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Tipo:</strong><br>
-            <span id="op-type">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Entrada:</strong><br>
-            <span id="op-entry">-</span>
-        </div>
-
-        <div class="box col-3">
-            <strong>Margem:</strong><br>
-            <span id="op-margin">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Alavancagem:</strong><br>
-            <span id="op-leverage">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Valor nocional:</strong><br>
-            <span id="op-notional">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Quantidade:</strong><br>
-            <span id="op-quantity">-</span>
-        </div>
-
-        <div class="box col-3">
-            <strong>Alvo parcial:</strong><br>
-            <span id="op-take-profit">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Saída parcial:</strong><br>
-            <span id="op-partial-close">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Invalidação:</strong><br>
-            <span id="op-invalidation">-</span>
-        </div>
-        <div class="box col-3">
-            <strong>Reduce Only parcial:</strong><br>
-            <span id="op-reduce-only">-</span>
-        </div>
+        {% else %}
+            <div class="note">Nenhum ativo analisado neste ciclo.</div>
+        {% endif %}
     </div>
 
-    <p id="op-message" class="notice">
-        Carregando plano seguro...
-    </p>
+    <div class="card">
+        <h2>Proposta Segura da Ordem</h2>
+        <p class="muted small">
+            Esta proposta é apenas um plano seguro. Nenhuma ordem é executada automaticamente.
+        </p>
 
-    <p class="danger">
-        Regra central: este bloco é apenas educativo e de preparação. Nenhuma ordem real ou testnet deve ser enviada sem confirmação humana.
-    </p>
-</div>
+        <div class="grid">
+            <div class="box">
+                <strong>Ação:</strong>
+                <span id="op-action">Carregando...</span>
+            </div>
 
-<script>
-(function () {
-    function setText(id, value) {
-        var element = document.getElementById(id);
-        if (element) {
-            element.textContent = value;
-        }
-    }
+            <div class="box">
+                <strong>Execução:</strong>
+                <span id="op-execution">Carregando...</span>
+            </div>
 
-    fetch("/api/order-plan")
-        .then(function (response) {
-            return response.json();
-        })
-        .then(function (plan) {
-            setText("op-action", plan.action || "-");
-            setText("op-execution", plan.execution_status || "-");
-            setText("op-safety", plan.safety_status || "-");
-            setText("op-human", plan.human_confirmation_required ? "Obrigatória" : "Não");
-            setText("op-symbol", plan.symbol || "-");
-            setText("op-side", plan.side || "-");
-            setText("op-type", plan.order_type || "-");
-            setText("op-entry", plan.entry_price || "-");
-            setText("op-margin", String(plan.margin_usdt || "-") + " USDT");
-            setText("op-leverage", String(plan.leverage || "-") + "x");
-            setText("op-notional", String(plan.notional_usdt || "-") + " USDT");
-            setText("op-quantity", plan.quantity || "-");
-            setText("op-take-profit", plan.partial_take_profit_price || "-");
-            setText("op-partial-close", String(plan.partial_close_percent || "-") + "%");
-            setText("op-invalidation", plan.invalidation_price || "-");
-            setText("op-reduce-only", plan.reduce_only_for_partial_exit ? "Sim" : "Não");
-            setText("op-message", plan.safety_note || plan.message || "Plano seguro carregado.");
-        })
-        .catch(function (error) {
-            setText("op-action", "ERRO");
-            setText("op-execution", "NÃO EXECUTADO");
-            setText("op-safety", "BLOQUEADO PARA EXECUÇÃO");
-            setText("op-message", "Não foi possível carregar a proposta segura de ordem: " + error);
-        });
-})();
-</script>
-            <h2>Segurança Operacional</h2>
+            <div class="box">
+                <strong>Segurança:</strong>
+                <span id="op-safety">Carregando...</span>
+            </div>
 
-            <p>
-                Este painel é apenas educacional. Ele não envia ordem automática,
-                não executa compra ou venda e mantém qualquer operação bloqueada
-                enquanto a confirmação humana não for implementada.
-            </p>
+            <div class="box">
+                <strong>Confirmação humana:</strong>
+                <span id="op-human">Carregando...</span>
+            </div>
 
-            <div class="alert">
-                Regra central: preservar capital vem antes de qualquer oportunidade.
+            <div class="box">
+                <strong>Ativo:</strong>
+                <span id="op-symbol">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Direção:</strong>
+                <span id="op-side">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Tipo:</strong>
+                <span id="op-type">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Entrada:</strong>
+                <span id="op-entry">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Margem:</strong>
+                <span id="op-margin">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Alavancagem:</strong>
+                <span id="op-leverage">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Valor nocional:</strong>
+                <span id="op-notional">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Quantidade:</strong>
+                <span id="op-quantity">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Alvo parcial:</strong>
+                <span id="op-take-profit">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Saída parcial:</strong>
+                <span id="op-partial-close">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Invalidação:</strong>
+                <span id="op-invalidation">Carregando...</span>
+            </div>
+
+            <div class="box">
+                <strong>Reduce Only parcial:</strong>
+                <span id="op-reduce-only">Carregando...</span>
             </div>
         </div>
 
-        <p class="muted">
-            Links rápidos:
-            <a href="/api/report">API JSON</a> |
-            <a href="/api/binance-testnet">Binance Testnet</a> |
-            <a href="/health">Health</a> |
-            <a href="/dashboard">Dashboard</a>
+        <div class="note" id="op-message">
+            Carregando proposta segura da ordem...
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Segurança Operacional</h2>
+
+        <p>
+            Este painel é apenas educacional. Ele não envia ordem automática, não executa compra ou venda
+            e mantém qualquer operação bloqueada enquanto a confirmação humana não for implementada.
         </p>
 
+        <div class="alert">
+            Regra central: preservar capital vem antes de qualquer oportunidade.
+        </div>
     </div>
+
+    <p class="footer">
+        Links rápidos:
+        <a href="/api/report">API JSON</a> |
+        <a href="/api/binance-testnet">Binance Testnet</a> |
+        <a href="/api/order-plan">Plano de Ordem</a> |
+        <a href="/health">Health</a> |
+        <a href="/dashboard">Dashboard</a>
+    </p>
+
+</div>
+
+<script>
+    function setText(id, value) {
+        var element = document.getElementById(id);
+
+        if (!element) {
+            return;
+        }
+
+        if (value === undefined || value === null || value === "") {
+            element.textContent = "-";
+            return;
+        }
+
+        element.textContent = value;
+    }
+
+    function loadOrderPlan() {
+        fetch("/api/order-plan")
+            .then(function (response) {
+                return response.json();
+            })
+            .then(function (plan) {
+                setText("op-action", plan.action || "-");
+                setText("op-execution", plan.execution_status || "NÃO EXECUTADO");
+                setText("op-safety", plan.safety_status || "BLOQUEADO PARA EXECUÇÃO");
+                setText("op-human", plan.human_confirmation_required ? "Obrigatória" : "Não");
+                setText("op-symbol", plan.symbol || "-");
+                setText("op-side", plan.side || "-");
+                setText("op-type", plan.order_type || "-");
+                setText("op-entry", plan.entry_price || "-");
+                setText("op-margin", String(plan.margin_usdt || "-") + " USDT");
+                setText("op-leverage", String(plan.leverage || "-") + "x");
+                setText("op-notional", String(plan.notional_usdt || "-") + " USDT");
+                setText("op-quantity", plan.quantity || "-");
+                setText("op-take-profit", plan.partial_take_profit_price || "-");
+                setText("op-partial-close", String(plan.partial_close_percent || "-") + "%");
+                setText("op-invalidation", plan.invalidation_price || "-");
+                setText("op-reduce-only", plan.reduce_only_for_partial_exit ? "Sim" : "Não");
+                setText("op-message", plan.safety_note || plan.message || "Plano seguro carregado.");
+            })
+            .catch(function (error) {
+                setText("op-action", "ERRO");
+                setText("op-execution", "NÃO EXECUTADO");
+                setText("op-safety", "BLOQUEADO PARA EXECUÇÃO");
+                setText("op-message", "Não foi possível carregar a proposta segura de ordem: " + error);
+            });
+    }
+
+    loadOrderPlan();
+</script>
+
 </body>
 </html>
 """
 
 
-@app.template_filter("money")
-def money_filter(value):
-    return format_money(value)
-
-
-@app.template_filter("price")
-def price_filter(value):
-    return format_price(value)
-
-
 @app.route("/")
 def home():
-    return """
-    <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>ÁGUIA MASTER BOT</title>
-            <style>
-                body {
-                    background: #0b1020;
-                    color: white;
-                    font-family: Arial, sans-serif;
-                    padding: 40px;
-                }
-
-                a {
-                    color: #93c5fd;
-                    font-size: 20px;
-                }
-            </style>
-        </head>
-
-        <body>
-            <h1>🦅 ÁGUIA MASTER BOT</h1>
-            <p>Robô observador educacional online.</p>
-            <p><a href="/dashboard">Abrir Dashboard</a></p>
-            <p><a href="/api/report">Ver API JSON</a></p>
-            <p><a href="/api/binance-testnet">Ver Binance Testnet</a></p>
-            <p><a href="/health">Ver Health</a></p>
-        </body>
-    </html>
-    """
+    return dashboard()
 
 
 @app.route("/dashboard")
 def dashboard():
-    report = build_report()
+    report = build_cycle_report()
+
+    try:
+        binance = get_binance_testnet_diagnostic()
+    except Exception as error:
+        binance = {
+            "connected": False,
+            "environment": "BINANCE FUTURES DEMO/TESTNET",
+            "has_api_key": False,
+            "has_api_secret": False,
+            "use_testnet": True,
+            "trading_enabled": False,
+            "human_confirm_required": True,
+            "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+            "orders_enabled_now": False,
+            "message": f"Erro ao carregar diagnóstico Binance: {error}",
+            "balance": {
+                "balance": 0,
+                "availableBalance": 0,
+                "crossWalletBalance": 0,
+            },
+            "positions": {
+                "count": 0,
+            },
+            "open_orders": {
+                "count": 0,
+            },
+        }
 
     return render_template_string(
-        HTML,
-        summary=report["summary"],
-        general_decision=report["general_decision"],
-        btc_context=report["btc_context"],
-        binance_testnet=report["binance_testnet"],
-        top_opportunities=report["top_opportunities"],
-        setup_radar=report["setup_radar"],
-        assets=report["assets"],
+        HTML_TEMPLATE,
+        report=report,
+        binance=binance,
+        format_price=format_price,
+        format_money=format_money,
+        css_badge_class=css_badge_class,
     )
 
 
 @app.route("/api/report")
 def api_report():
-    return jsonify(build_report())
+    return jsonify(build_cycle_report())
 
 
 @app.route("/api/binance-testnet")
 def api_binance_testnet():
-    diagnostic = get_binance_testnet_diagnostic()
-    return jsonify(diagnostic)
+    try:
+        diagnostic = get_binance_testnet_diagnostic()
+        return jsonify(diagnostic)
+    except Exception as error:
+        return jsonify(
+            {
+                "ok": False,
+                "connected": False,
+                "error": str(error),
+                "message": "Erro ao consultar diagnóstico da Binance Futures Testnet.",
+                "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+                "trading_enabled": False,
+                "testnet_orders_enabled": False,
+            }
+        )
+
+
+@app.route("/api/order-plan")
+def api_order_plan():
+    return jsonify(build_safe_order_plan())
 
 
 @app.route("/health")
 def health():
     return jsonify(
         {
-            "status": "ok",
             "app": APP_NAME,
             "mode": APP_MODE,
             "version": APP_VERSION,
@@ -1661,70 +1698,6 @@ def health():
         }
     )
 
-@app.route("/api/order-plan")
-def api_order_plan():
-    """
-    Gera uma proposta segura de ordem usando o order_planner.py.
-    Esta rota NÃO executa ordem.
-    Ela apenas prepara o plano em modo PREPARE_ONLY.
-    """
-    import json
-    import subprocess
-    import sys
-
-    try:
-        result = subprocess.run(
-            [sys.executable, "order_planner.py"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-
-        if result.returncode != 0:
-            return jsonify(
-                {
-                    "ok": False,
-                    "error": "Falha ao executar order_planner.py",
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "safety_status": "BLOQUEADO PARA EXECUÇÃO",
-                    "trading_enabled": False,
-                    "testnet_orders_enabled": False,
-                }
-            ), 500
-
-        try:
-            plan = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return jsonify(
-                {
-                    "ok": False,
-                    "error": "order_planner.py não retornou JSON válido",
-                    "raw_output": result.stdout,
-                    "safety_status": "BLOQUEADO PARA EXECUÇÃO",
-                    "trading_enabled": False,
-                    "testnet_orders_enabled": False,
-                }
-            ), 500
-
-        plan["route"] = "/api/order-plan"
-        plan["execution_status"] = "NÃO EXECUTADO"
-        plan["safety_note"] = (
-            "Plano gerado em modo seguro. Nenhuma ordem foi enviada para a Binance."
-        )
-
-        return jsonify(plan)
-
-    except Exception as exc:
-        return jsonify(
-            {
-                "ok": False,
-                "error": str(exc),
-                "safety_status": "BLOQUEADO PARA EXECUÇÃO",
-                "trading_enabled": False,
-                "testnet_orders_enabled": False,
-            }
-        ), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
