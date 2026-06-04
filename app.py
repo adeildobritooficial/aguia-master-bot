@@ -1396,6 +1396,149 @@ def build_mec_decision_engine():
         "message": "Cérebro MEC analisou o cenário. Nenhuma ordem foi enviada.",
     }
 
+def build_controlled_testnet_executor():
+    """
+    Executor Didático Testnet Controlado.
+
+    Esta função NÃO envia ordem para a Binance.
+    Esta função NÃO executa compra ou venda.
+    Esta função NÃO libera ordem real.
+    Esta função apenas valida se o fluxo operacional está pronto
+    para uma futura etapa didática de execução controlada em Testnet.
+    """
+
+    mec = build_mec_decision_engine()
+    plan = build_safe_order_plan()
+    human = build_human_confirmation()
+    risk = build_risk_final_validation()
+    simulation = build_testnet_simulation()
+    manual_auth = build_manual_test_authorization()
+
+    checks = {
+    "mec_decision_loaded": bool(mec.get("ok")),
+    "mec_allows_plan": bool(mec.get("can_prepare_order_plan")),
+    "safe_order_plan_loaded": bool(plan.get("ok")),
+    "human_confirmation_received": bool(human.get("human_confirmation")),
+    "risk_engine_required": True,
+    "risk_final_validation_loaded": bool(risk.get("ok")),
+    "testnet_simulation_loaded": bool(simulation.get("ok")),
+    "manual_authorization_registered": bool(manual_auth.get("ok")),
+    "trading_disabled": not bool(plan.get("trading_enabled")),
+    "testnet_orders_disabled": not bool(plan.get("testnet_orders_enabled")),
+    "real_orders_disabled": not bool(plan.get("real_orders_enabled")),
+   }
+
+    blocks = []
+    warnings = []
+
+    decision = "EXECUTOR_DIDATICO_PREPARADO"
+    executor_status = "BLOQUEADO_PARA_ENVIO_DE_ORDEM"
+    execution_status = "NÃO EXECUTADO"
+    next_step = "CRIAR_EXECUTOR_TESTNET_REAL_SOMENTE_COM_NOVA_AUTORIZACAO"
+    action_recommended = "MANTER_EXECUTOR_EM_MODO_DIDATICO"
+
+    if not checks["mec_decision_loaded"]:
+        blocks.append("MEC_DECISION_NOT_LOADED")
+
+    if not checks["mec_allows_plan"]:
+        blocks.append("MEC_DOES_NOT_ALLOW_ORDER_PLAN")
+
+    if not checks["safe_order_plan_loaded"]:
+        blocks.append("SAFE_ORDER_PLAN_NOT_LOADED")
+
+    if not checks["human_confirmation_received"]:
+        blocks.append("HUMAN_CONFIRMATION_NOT_RECEIVED")
+
+    if not checks["risk_final_validation_loaded"]:
+        blocks.append("RISK_FINAL_VALIDATION_NOT_LOADED")
+
+    if not checks["testnet_simulation_loaded"]:
+        blocks.append("TESTNET_SIMULATION_NOT_LOADED")
+
+    if not checks["manual_authorization_registered"]:
+        blocks.append("MANUAL_AUTHORIZATION_NOT_REGISTERED")
+
+    if not checks["trading_disabled"]:
+        blocks.append("TRADING_ENABLED_SHOULD_BE_FALSE")
+
+    if not checks["testnet_orders_disabled"]:
+        blocks.append("TESTNET_ORDERS_ENABLED_SHOULD_BE_FALSE")
+
+    if not checks["real_orders_disabled"]:
+        blocks.append("REAL_ORDERS_ENABLED_SHOULD_BE_FALSE")
+
+    if blocks:
+        decision = "EXECUTOR_BLOQUEADO"
+        executor_status = "BLOQUEADO_POR_SEGURANCA"
+        action_recommended = "CORRIGIR_BLOQUEIOS_ANTES_DE_AVANCAR"
+        next_step = "REVISAR_FLUXO_DE_SEGURANCA"
+        warnings.append("Existem bloqueios no fluxo. Nenhuma etapa de execução pode avançar.")
+    else:
+        warnings.append("Todas as etapas didáticas foram verificadas.")
+        warnings.append("Mesmo preparado, o executor continua sem enviar ordem.")
+        warnings.append("A próxima etapa exigirá autorização separada antes de qualquer integração real com Testnet.")
+
+    simulated_executor_order = {
+        "symbol": plan.get("symbol"),
+        "side": plan.get("side"),
+        "order_type": plan.get("order_type"),
+        "entry_price": plan.get("entry_price"),
+        "quantity": plan.get("quantity"),
+        "margin_usdt": plan.get("margin_usdt"),
+        "leverage": plan.get("leverage"),
+        "notional_usdt": plan.get("notional_usdt"),
+        "partial_take_profit_price": plan.get("partial_take_profit_price"),
+        "partial_close_percent": plan.get("partial_close_percent"),
+        "invalidation_price": plan.get("invalidation_price"),
+        "reduce_only_for_entry": False,
+        "reduce_only_for_partial_exit": True,
+    }
+
+    return {
+        "ok": True,
+        "route": "/api/controlled-testnet-executor",
+        "action": "CONTROLLED_TESTNET_EXECUTOR",
+        "executor_type": "EXECUTOR_DIDATICO_TESTNET_CONTROLADO",
+        "decision": decision,
+        "executor_status": executor_status,
+        "execution_status": execution_status,
+        "environment": "BINANCE_FUTURES_TESTNET_CONTROLLED_SIMULATION",
+        "symbol": plan.get("symbol"),
+        "side": plan.get("side"),
+        "order_type": plan.get("order_type"),
+        "entry_price": plan.get("entry_price"),
+        "quantity": plan.get("quantity"),
+        "margin_usdt": plan.get("margin_usdt"),
+        "leverage": plan.get("leverage"),
+        "notional_usdt": plan.get("notional_usdt"),
+        "partial_take_profit_price": plan.get("partial_take_profit_price"),
+        "partial_close_percent": plan.get("partial_close_percent"),
+        "invalidation_price": plan.get("invalidation_price"),
+        "mec_decision": mec.get("decision"),
+        "mec_direction": mec.get("direction"),
+        "mec_confidence": mec.get("confidence"),
+        "risk_decision": risk.get("decision"),
+        "risk_level": risk.get("risk_level"),
+        "human_confirmation": human.get("human_confirmation"),
+        "manual_authorization": manual_auth.get("controlled_test_authorization"),
+        "risk_engine_required": True,
+        "manual_final_approval_required": True,
+        "controlled_test_authorization": True,
+        "trading_enabled": False,
+        "testnet_orders_enabled": False,
+        "real_orders_enabled": False,
+        "send_order_to_binance": False,
+        "simulated_executor_order": simulated_executor_order,
+        "checks": checks,
+        "blocks": blocks,
+        "warnings": warnings,
+        "safety_status": "EXECUTOR_DIDATICO_BLOQUEADO_PARA_ENVIO",
+        "action_recommended": action_recommended,
+        "next_step": next_step,
+        "message": "Executor didático testnet controlado preparado. Nenhuma ordem foi enviada para a Binance.",
+        "safety_note": "Esta etapa apenas organiza a lógica do executor. Não executa ordem real nem testnet.",
+    }
+
 HTML = """
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -2401,6 +2544,83 @@ HTML = """
     </div>
 </div>
 
+<div class="card">
+    <h2>Executor Didático Testnet Controlado</h2>
+    <p class="muted">
+        Esta etapa verifica se o executor didático está preparado, mas continua sem enviar ordem para a Binance.
+    </p>
+
+    <div class="grid">
+        <div class="box">
+            <strong>Ação:</strong><br>
+            <span id="exec-action">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Tipo:</strong><br>
+            <span id="exec-type">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Decisão:</strong><br>
+            <span id="exec-decision">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Status:</strong><br>
+            <span id="exec-status">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Execução:</strong><br>
+            <span id="exec-execution">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Enviar Binance?</strong><br>
+            <span id="exec-send">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Trading:</strong><br>
+            <span id="exec-trading">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Testnet Orders:</strong><br>
+            <span id="exec-testnet">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Real Orders:</strong><br>
+            <span id="exec-real">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Símbolo:</strong><br>
+            <span id="exec-symbol">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Direção:</strong><br>
+            <span id="exec-side">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Quantidade:</strong><br>
+            <span id="exec-quantity">Carregando...</span>
+        </div>
+    </div>
+
+    <div class="alert" id="exec-message">
+        Carregando executor didático testnet controlado...
+    </div>
+
+    <div class="alert" id="exec-warning">
+        Nenhuma ordem será enviada automaticamente.
+    </div>
+</div>
+
         <div class="card">
             <h2>Segurança Operacional</h2>
 
@@ -2698,6 +2918,10 @@ def api_testnet_simulation():
 @app.route("/api/manual-test-authorization")
 def api_manual_test_authorization():
     return jsonify(build_manual_test_authorization())
+
+@app.route("/api/controlled-testnet-executor")
+def api_controlled_testnet_executor():
+    return jsonify(build_controlled_testnet_executor())
 
 @app.route("/api/mec-decision-engine")
 def api_mec_decision_engine():
