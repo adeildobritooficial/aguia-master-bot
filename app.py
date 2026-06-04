@@ -1761,6 +1761,164 @@ HTML = """
             </div>
         </div>
 
+<div class="card">
+    <h2>Validação Final do Motor de Risco</h2>
+    <p class="muted">
+        Esta etapa confere se a proposta pode seguir para teste seguro. Mesmo aprovada,
+        nenhuma ordem é enviada automaticamente.
+    </p>
+
+    <div class="grid">
+        <div class="box">
+            <strong>Ação:</strong><br>
+            <span id="risk-action">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Decisão:</strong><br>
+            <span id="risk-decision">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Status:</strong><br>
+            <span id="risk-execution">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Segurança:</strong><br>
+            <span id="risk-safety">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Nível de risco:</strong><br>
+            <span id="risk-level">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Ativo:</strong><br>
+            <span id="risk-symbol">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Direção:</strong><br>
+            <span id="risk-side">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Entrada:</strong><br>
+            <span id="risk-entry">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Invalidação:</strong><br>
+            <span id="risk-invalidation">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Distância até invalidação:</strong><br>
+            <span id="risk-distance">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Margem:</strong><br>
+            <span id="risk-margin">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Alavancagem:</strong><br>
+            <span id="risk-leverage">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Valor nocional:</strong><br>
+            <span id="risk-notional">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Quantidade:</strong><br>
+            <span id="risk-quantity">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Próxima etapa:</strong><br>
+            <span id="risk-next-step">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Reduce Only parcial:</strong><br>
+            <span id="risk-reduce-only">Carregando...</span>
+        </div>
+    </div>
+
+    <div class="alert" id="risk-message">
+        Carregando validação final do motor de risco...
+    </div>
+
+    <div class="alert" id="risk-blocks">
+        Bloqueios: carregando...
+    </div>
+
+    <div class="alert" id="risk-warnings">
+        Alertas: carregando...
+    </div>
+</div>
+
+<script>
+(function () {
+    function setText(id, value) {
+        var element = document.getElementById(id);
+        if (!element) return;
+        if (value === null || value === undefined || value === "") {
+            element.innerText = "-";
+        } else {
+            element.innerText = value;
+        }
+    }
+
+    function joinList(value) {
+        if (!value || !Array.isArray(value) || value.length === 0) {
+            return "Nenhum item encontrado.";
+        }
+        return value.join(" | ");
+    }
+
+    fetch("/api/risk-final-validation")
+        .then(function (response) {
+            return response.json();
+        })
+        .then(function (risk) {
+            setText("risk-action", risk.action);
+            setText("risk-decision", risk.decision);
+            setText("risk-execution", risk.execution_status);
+            setText("risk-safety", risk.safety_status);
+            setText("risk-level", risk.risk_level);
+            setText("risk-symbol", risk.symbol);
+            setText("risk-side", risk.side);
+            setText("risk-entry", risk.entry_price);
+            setText("risk-invalidation", risk.invalidation_price);
+            setText("risk-distance", String(risk.distance_to_invalidation_percent) + "%");
+            setText("risk-margin", String(risk.margin_usdt) + " USDT");
+            setText("risk-leverage", String(risk.leverage) + "x");
+            setText("risk-notional", String(risk.notional_usdt) + " USDT");
+            setText("risk-quantity", risk.quantity);
+            setText("risk-next-step", risk.next_step);
+            setText("risk-reduce-only", risk.reduce_only_for_partial_exit ? "Sim" : "Não");
+            setText("risk-message", risk.message || risk.action_recommended);
+            setText("risk-blocks", "Bloqueios: " + joinList(risk.blocks));
+            setText("risk-warnings", "Alertas: " + joinList(risk.warnings));
+        })
+        .catch(function (error) {
+            setText("risk-action", "ERRO");
+            setText("risk-decision", "PAUSAR");
+            setText("risk-execution", "NÃO EXECUTADO");
+            setText("risk-safety", "BLOQUEADO PARA EXECUÇÃO");
+            setText("risk-message", "Não foi possível carregar a validação final do motor de risco: " + error);
+            setText("risk-blocks", "Bloqueios: falha ao consultar a rota.");
+            setText("risk-warnings", "Alertas: revisar rota /api/risk-final-validation.");
+        });
+})();
+</script>
+
         <div class="card">
             <h2>Segurança Operacional</h2>
 
