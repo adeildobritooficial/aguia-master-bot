@@ -1539,6 +1539,89 @@ def build_controlled_testnet_executor():
         "safety_note": "Esta etapa apenas organiza a lógica do executor. Não executa ordem real nem testnet.",
     }
 
+def build_final_testnet_execution_authorization():
+    """
+    Autorização final para futura execução em Testnet real.
+    Esta função NÃO envia ordem para a Binance.
+    Ela apenas registra que o executor didático passou pelas travas anteriores
+    e que uma nova autorização humana seria obrigatória antes de qualquer teste real.
+    """
+    executor = build_controlled_testnet_executor()
+
+    checks = executor.get("checks", {})
+
+    final_authorization_ready = all([
+        bool(checks.get("human_confirmation_received", False)),
+        bool(checks.get("manual_authorization_registered", False)),
+        bool(checks.get("mec_decision_loaded", False)),
+        bool(checks.get("mec_allows_plan", False)),
+        bool(checks.get("safe_order_plan_loaded", False)),
+        bool(checks.get("risk_final_validation_loaded", False)),
+        bool(checks.get("testnet_simulation_loaded", False)),
+        bool(executor.get("controlled_test_authorization", False) or checks.get("controlled_test_authorization", False)),
+        bool(checks.get("trading_disabled", False)),
+        bool(checks.get("testnet_orders_disabled", False)),
+        bool(checks.get("real_orders_disabled", False)),
+    ])
+
+    warnings = [
+        "Esta autorização final ainda não executa ordem.",
+        "Ordens reais continuam desativadas.",
+        "Ordens Testnet continuam desativadas nesta etapa.",
+        "Qualquer integração futura com Testnet real exigirá executor separado, logs e nova autorização.",
+    ]
+
+    blocks = [
+        "TRADING_ENABLED_FALSE",
+        "TESTNET_ORDERS_ENABLED_FALSE",
+        "REAL_ORDERS_ENABLED_FALSE",
+        "FINAL_AUTHORIZATION_ONLY",
+    ]
+
+    decision = "AUTORIZACAO_FINAL_PREPARADA" if final_authorization_ready else "AUTORIZACAO_FINAL_BLOQUEADA"
+    authorization_status = "PRONTA_PARA_PROXIMA_ETAPA_DIDATICA" if final_authorization_ready else "BLOQUEADA_POR_CHECKS_INCOMPLETOS"
+
+    return {
+        "ok": True,
+        "route": "/api/final-testnet-execution-authorization",
+        "action": "FINAL_TESTNET_EXECUTION_AUTHORIZATION",
+        "execution_status": "NÃO EXECUTADO",
+        "authorization_status": authorization_status,
+        "decision": decision,
+        "environment": "BINANCE_FUTURES_TESTNET_AUTHORIZATION_ONLY",
+
+        "symbol": executor.get("symbol", "ETHUSDT"),
+        "side": executor.get("side", "BUY"),
+        "order_type": executor.get("order_type", "LIMIT"),
+        "entry_price": executor.get("entry_price"),
+        "quantity": executor.get("quantity"),
+        "margin_usdt": executor.get("margin_usdt"),
+        "leverage": executor.get("leverage"),
+        "notional_usdt": executor.get("notional_usdt"),
+        "partial_take_profit_price": executor.get("partial_take_profit_price"),
+        "partial_close_percent": executor.get("partial_close_percent"),
+        "invalidation_price": executor.get("invalidation_price"),
+
+        "human_confirmation": True,
+        "manual_authorization": True,
+        "risk_engine_required": True,
+        "manual_final_approval_required": True,
+        "final_testnet_authorization": final_authorization_ready,
+
+        "trading_enabled": False,
+        "testnet_orders_enabled": False,
+        "real_orders_enabled": False,
+        "send_order_to_binance": False,
+
+        "safety_status": "AUTORIZAÇÃO_FINAL_SEM_EXECUÇÃO",
+        "next_step": "CRIAR_EXECUTOR_TESTNET_REAL_SEPARADO_COM_LOGS_E_NOVA_AUTORIZACAO",
+        "message": "Autorização final didática preparada. Nenhuma ordem foi enviada para a Binance.",
+        "safety_note": "Esta etapa apenas registra autorização final didática. Não executa ordem real nem testnet.",
+        "warnings": warnings,
+        "blocks": blocks,
+        "checks": checks,
+    }
+
 HTML = """
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -2801,10 +2884,57 @@ function loadTestnetSimulation() {
         });
 }
 
+function loadControlledTestnetExecutor() {
+    fetch("/api/controlled-testnet-executor")
+        .then(function (response) {
+            return response.json();
+        })
+        .then(function (data) {
+            setText("exec-action", data.action || "-");
+            setText("exec-type", data.executor_type || "-");
+            setText("exec-decision", data.decision || "-");
+            setText("exec-status", data.executor_status || "-");
+            setText("exec-execution", data.execution_status || "NÃO EXECUTADO");
+            setText("exec-send", data.send_order_to_binance ? "Sim" : "Não");
+            setText("exec-trading", data.trading_enabled ? "Sim" : "Não");
+            setText("exec-testnet", data.testnet_orders_enabled ? "Sim" : "Não");
+            setText("exec-real", data.real_orders_enabled ? "Sim" : "Não");
+            setText("exec-symbol", data.symbol || "-");
+            setText("exec-side", data.side || "-");
+            setText("exec-quantity", data.quantity || "-");
+
+            setText("exec-message", data.message || "Executor didático carregado.");
+
+            var warnings = data.warnings || [];
+            if (warnings.length > 0) {
+                setText("exec-warning", warnings.join(" | "));
+            } else {
+                setText("exec-warning", "Nenhum alerta operacional encontrado.");
+            }
+        })
+        .catch(function (error) {
+            setText("exec-action", "ERRO");
+            setText("exec-type", "ERRO AO CARREGAR");
+            setText("exec-decision", "BLOQUEADO");
+            setText("exec-status", "BLOQUEADO POR SEGURANÇA");
+            setText("exec-execution", "NÃO EXECUTADO");
+            setText("exec-send", "Não");
+            setText("exec-trading", "Não");
+            setText("exec-testnet", "Não");
+            setText("exec-real", "Não");
+            setText("exec-symbol", "-");
+            setText("exec-side", "-");
+            setText("exec-quantity", "-");
+            setText("exec-message", "Não foi possível carregar o executor didático: " + error);
+            setText("exec-warning", "Executor permaneceu bloqueado por segurança.");
+        });
+}
+
         loadMecDecisionEngine();
         loadOrderPlan();
         loadHumanConfirm();
         loadTestnetSimulation();
+loadControlledTestnetExecutor();
     </script>
 </body>
 </html>
@@ -2922,6 +3052,11 @@ def api_manual_test_authorization():
 @app.route("/api/controlled-testnet-executor")
 def api_controlled_testnet_executor():
     return jsonify(build_controlled_testnet_executor())
+
+
+@app.route("/api/final-testnet-execution-authorization")
+def api_final_testnet_execution_authorization():
+    return jsonify(build_final_testnet_execution_authorization())
 
 @app.route("/api/mec-decision-engine")
 def api_mec_decision_engine():
