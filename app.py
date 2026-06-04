@@ -939,6 +939,136 @@ def build_human_confirmation():
         "message": "Confirmação humana recebida. Ordem ainda bloqueada. Próxima etapa: validação final do motor de risco.",
     }
 
+def build_risk_final_validation():
+    plan = build_safe_order_plan()
+
+    warnings = []
+    blocks = []
+    decision = "APROVAR_TESTE"
+    risk_level = "BAIXO"
+    action_recommended = "Plano pode seguir para simulação segura, sem execução automática."
+
+    margin_usdt = float(plan.get("margin_usdt", 0) or 0)
+    leverage = int(plan.get("leverage", 0) or 0)
+    entry_price = float(plan.get("entry_price", 0) or 0)
+    invalidation_price = float(plan.get("invalidation_price", 0) or 0)
+    notional_usdt = float(plan.get("notional_usdt", 0) or 0)
+
+    trading_enabled = bool(plan.get("trading_enabled", False))
+    testnet_orders_enabled = bool(plan.get("testnet_orders_enabled", False))
+    real_orders_enabled = bool(plan.get("real_orders_enabled", False))
+    human_confirmation_required = bool(plan.get("human_confirmation_required", True))
+
+    if trading_enabled:
+        blocks.append("TRADING_ENABLED não pode estar ativo nesta fase.")
+        decision = "KILL_SWITCH"
+        risk_level = "CRÍTICO"
+
+    if testnet_orders_enabled:
+        blocks.append("TESTNET_ORDERS_ENABLED não pode estar ativo nesta fase.")
+        decision = "KILL_SWITCH"
+        risk_level = "CRÍTICO"
+
+    if real_orders_enabled:
+        blocks.append("REAL_ORDERS_ENABLED não pode estar ativo nesta fase.")
+        decision = "KILL_SWITCH"
+        risk_level = "CRÍTICO"
+
+    if not human_confirmation_required:
+        blocks.append("Confirmação humana obrigatória não está ativa.")
+        decision = "BLOQUEAR"
+        risk_level = "ALTO"
+
+    if margin_usdt <= 0:
+        blocks.append("Margem inválida ou zerada.")
+        decision = "BLOQUEAR"
+        risk_level = "ALTO"
+
+    if leverage <= 0:
+        blocks.append("Alavancagem inválida ou zerada.")
+        decision = "BLOQUEAR"
+        risk_level = "ALTO"
+
+    if leverage > 20:
+        warnings.append("Alavancagem acima de 20x. Exige cautela elevada.")
+        if decision == "APROVAR_TESTE":
+            decision = "PAUSAR"
+            risk_level = "MÉDIO/ALTO"
+
+    if margin_usdt > 25:
+        warnings.append("Margem acima do limite educacional inicial de 25 USDT.")
+        if decision == "APROVAR_TESTE":
+            decision = "PAUSAR"
+            risk_level = "MÉDIO"
+
+    if notional_usdt > 500:
+        warnings.append("Valor nocional acima de 500 USDT.")
+        if decision == "APROVAR_TESTE":
+            decision = "PAUSAR"
+            risk_level = "MÉDIO"
+
+    if entry_price <= 0:
+        blocks.append("Preço de entrada inválido.")
+        decision = "BLOQUEAR"
+        risk_level = "ALTO"
+
+    if invalidation_price <= 0:
+        blocks.append("Preço de invalidação inválido.")
+        decision = "BLOQUEAR"
+        risk_level = "ALTO"
+
+    if entry_price > 0 and invalidation_price > 0:
+        distance_percent = abs(entry_price - invalidation_price) / entry_price * 100
+
+        if distance_percent > 5:
+            warnings.append("Invalidação muito distante da entrada. Risco técnico elevado.")
+            if decision == "APROVAR_TESTE":
+                decision = "PAUSAR"
+                risk_level = "MÉDIO/ALTO"
+    else:
+        distance_percent = 0
+
+    if blocks:
+        action_recommended = "Não seguir para teste. Corrigir bloqueios antes de qualquer simulação."
+
+    if decision == "KILL_SWITCH":
+        action_recommended = "Parar imediatamente. Alguma trava crítica foi violada."
+
+    if decision == "PAUSAR":
+        action_recommended = "Pausar e revisar parâmetros antes de seguir."
+
+    return {
+        "ok": len(blocks) == 0,
+        "route": "/api/risk-final-validation",
+        "action": "RISK_FINAL_VALIDATION",
+        "decision": decision,
+        "execution_status": "NÃO EXECUTADO",
+        "risk_level": risk_level,
+        "action_recommended": action_recommended,
+        "symbol": plan.get("symbol"),
+        "side": plan.get("side"),
+        "order_type": plan.get("order_type"),
+        "entry_price": entry_price,
+        "invalidation_price": invalidation_price,
+        "distance_to_invalidation_percent": round(distance_percent, 2),
+        "margin_usdt": margin_usdt,
+        "leverage": leverage,
+        "notional_usdt": notional_usdt,
+        "quantity": plan.get("quantity"),
+        "partial_take_profit_price": plan.get("partial_take_profit_price"),
+        "partial_close_percent": plan.get("partial_close_percent"),
+        "reduce_only_for_partial_exit": plan.get("reduce_only_for_partial_exit"),
+        "human_confirmation_required": human_confirmation_required,
+        "trading_enabled": trading_enabled,
+        "testnet_orders_enabled": testnet_orders_enabled,
+        "real_orders_enabled": real_orders_enabled,
+        "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+        "next_step": "AGUARDAR_APROVACAO_MANUAL_FINAL",
+        "warnings": warnings,
+        "blocks": blocks,
+        "message": "Validação final do motor de risco concluída. Nenhuma ordem foi enviada para a Binance.",
+        "safety_note": "Esta etapa apenas valida risco. Não executa ordem real nem testnet.",
+    }
 
 HTML = """
 <!DOCTYPE html>
@@ -1837,6 +1967,9 @@ def api_order_plan():
 def api_human_confirm():
     return jsonify(build_human_confirmation())
 
+@app.route("/api/risk-final-validation")
+def api_risk_final_validation():
+    return jsonify(build_risk_final_validation())
 
 @app.route("/health")
 def health():
