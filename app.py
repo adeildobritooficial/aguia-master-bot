@@ -1137,6 +1137,265 @@ def build_testnet_simulation():
         ],
     }
 
+def build_manual_test_authorization():
+    """
+    Autorização manual para teste controlado.
+    Esta função NÃO executa ordem.
+    Ela apenas registra que o usuário autorizou seguir para uma etapa futura de teste controlado.
+    Mesmo autorizada, a execução real e testnet continuam bloqueadas.
+    """
+    simulation = build_testnet_simulation()
+    simulated_order = simulation.get("simulated_order", {})
+
+    return {
+        "ok": True,
+        "route": "/api/manual-test-authorization",
+        "action": "MANUAL_TEST_AUTHORIZATION_REGISTERED",
+        "execution_status": "NÃO EXECUTADO",
+        "authorization_status": "AUTORIZAÇÃO MANUAL REGISTRADA",
+        "environment": "BINANCE_FUTURES_TESTNET_CONTROLLED",
+
+        "symbol": simulated_order.get("symbol", "ETHUSDT"),
+        "side": simulated_order.get("side", "BUY"),
+        "order_type": simulated_order.get("order_type", "LIMIT"),
+        "entry_price": simulated_order.get("entry_price"),
+        "quantity": simulated_order.get("quantity"),
+        "margin_usdt": simulated_order.get("margin_usdt"),
+        "leverage": simulated_order.get("leverage"),
+        "notional_usdt": simulated_order.get("notional_usdt"),
+        "partial_take_profit_price": simulated_order.get("partial_take_profit_price"),
+        "partial_close_percent": simulated_order.get("partial_close_percent"),
+        "invalidation_price": simulated_order.get("invalidation_price"),
+
+        "decision": "AUTORIZAR_PROXIMA_ETAPA_DIDATICA",
+        "human_confirmation_required": True,
+        "risk_engine_required": True,
+        "manual_final_approval_required": True,
+        "controlled_test_authorization": True,
+
+        "trading_enabled": False,
+        "testnet_orders_enabled": False,
+        "real_orders_enabled": False,
+
+        "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+        "next_step": "AGUARDAR_EXECUTOR_DIDATICO_TESTNET_CONTROLADO",
+
+        "message": "Autorização manual registrada. Nenhuma ordem foi enviada para a Binance.",
+        "safety_note": "Esta autorização não executa ordem real nem testnet. Ela apenas libera a próxima etapa didática controlada.",
+
+        "warnings": [
+            "Execução automática continua bloqueada.",
+            "Ordens reais continuam desativadas.",
+            "Ordens testnet continuam desativadas nesta etapa.",
+            "A próxima etapa ainda dependerá de um executor didático separado.",
+        ],
+        "blocks": [
+            "TRADING_ENABLED_FALSE",
+            "TESTNET_ORDERS_ENABLED_FALSE",
+            "REAL_ORDERS_ENABLED_FALSE",
+            "MANUAL_AUTHORIZATION_ONLY",
+        ],
+    }
+
+def build_mec_decision_engine():
+    """
+    Cérebro operacional inspirado na lógica do Método Águia Cripto.
+    Objetivo: buscar oportunidades de ganho com leitura técnica, disciplina,
+    proteção de banca e controle de risco.
+
+    Esta função NÃO executa ordem.
+    Ela apenas analisa o cenário e gera uma decisão operacional segura.
+    """
+
+    symbol = "ETHUSDT"
+
+    market_context = {
+        "symbol": symbol,
+        "btc_trend": "LATERAL",
+        "daily_trend": "LATERAL",
+        "h4_context": "SUPORTE_COM_REJEICAO",
+        "m5_context": "ROMPIMENTO_LOCAL_COM_VOLUME",
+        "buyer_volume": "AUMENTANDO",
+        "seller_volume": "CAINDO",
+        "price_position": "PROXIMO_SUPORTE",
+        "distance_to_resistance": "BOA",
+        "entry_condition": "AGUARDAR_RETESTE",
+    }
+
+    risk_context = {
+        "account_balance_usdt": 1000,
+        "current_risk_percent": 4.5,
+        "daily_loss_percent": 0,
+        "weekly_loss_percent": 0,
+        "open_positions": 3,
+        "margin_usdt": 25,
+        "leverage": 20,
+        "entry_price": 3000,
+        "invalidation_price": 2900,
+        "partial_take_profit_price": 3060,
+        "estimated_liquidation_price": 2850,
+    }
+
+    decision = "AGUARDAR_CONFIRMACAO"
+    direction = "LONG"
+    confidence = "MEDIA_ALTA"
+    risk_status = "CONTROLADO"
+    objective = "BUSCAR_GANHO_COM_RISCO_CONTROLADO"
+    action_recommended = "MONITORAR_RETESTE_ANTES_DA_ENTRADA"
+    entry_instruction = "Não entrar esticado. Aguardar pullback curto ou reteste da região rompida."
+    protection_instruction = "Preservar capital vem antes de qualquer oportunidade."
+    can_prepare_order_plan = False
+    blocks = []
+    warnings = []
+
+    btc_trend = market_context["btc_trend"]
+    daily_trend = market_context["daily_trend"]
+    h4_context = market_context["h4_context"]
+    m5_context = market_context["m5_context"]
+    buyer_volume = market_context["buyer_volume"]
+    seller_volume = market_context["seller_volume"]
+    distance_to_resistance = market_context["distance_to_resistance"]
+
+    current_risk = risk_context["current_risk_percent"]
+    daily_loss = risk_context["daily_loss_percent"]
+    weekly_loss = risk_context["weekly_loss_percent"]
+    open_positions = risk_context["open_positions"]
+    leverage = risk_context["leverage"]
+    entry_price = risk_context["entry_price"]
+    invalidation_price = risk_context["invalidation_price"]
+    liquidation_price = risk_context["estimated_liquidation_price"]
+
+    distance_to_invalidation_percent = round(
+        abs(entry_price - invalidation_price) / entry_price * 100,
+        2
+    )
+
+    distance_to_liquidation_percent = round(
+        abs(entry_price - liquidation_price) / entry_price * 100,
+        2
+    )
+
+    # Travas principais de segurança
+    if daily_loss >= 5:
+        decision = "KILL_SWITCH"
+        direction = "NENHUMA"
+        confidence = "BLOQUEADO"
+        risk_status = "CRITICO"
+        action_recommended = "PARAR_OPERACOES_NO_DIA"
+        entry_instruction = "Não operar. Limite diário de perda atingido."
+        can_prepare_order_plan = False
+        blocks.append("DAILY_LOSS_LIMIT_REACHED")
+
+    elif weekly_loss >= 12:
+        decision = "BLOQUEAR"
+        direction = "NENHUMA"
+        confidence = "BLOQUEADO"
+        risk_status = "ALTO"
+        action_recommended = "PAUSAR_E_REAVALIAR_BANCA"
+        entry_instruction = "Não operar. Risco semanal elevado."
+        can_prepare_order_plan = False
+        blocks.append("WEEKLY_LOSS_LIMIT_REACHED")
+
+    elif current_risk >= 10:
+        decision = "BLOQUEAR"
+        direction = "NENHUMA"
+        confidence = "BLOQUEADO"
+        risk_status = "ALTO"
+        action_recommended = "REDUZIR_RISCO_ANTES_DE_NOVA_ENTRADA"
+        entry_instruction = "Não abrir nova operação com risco da banca elevado."
+        can_prepare_order_plan = False
+        blocks.append("ACCOUNT_RISK_TOO_HIGH")
+
+    elif open_positions >= 5:
+        decision = "BLOQUEAR"
+        direction = "NENHUMA"
+        confidence = "BLOQUEADO"
+        risk_status = "ALTO"
+        action_recommended = "EVITAR_EXCESSO_DE_OPERACOES_ABERTAS"
+        entry_instruction = "Não abrir nova entrada. Muitas operações abertas."
+        can_prepare_order_plan = False
+        blocks.append("TOO_MANY_OPEN_POSITIONS")
+
+    elif leverage > 20:
+        decision = "BLOQUEAR"
+        direction = "NENHUMA"
+        confidence = "BLOQUEADO"
+        risk_status = "ALTO"
+        action_recommended = "REDUZIR_ALAVANCAGEM"
+        entry_instruction = "Alavancagem acima do limite seguro desta fase."
+        can_prepare_order_plan = False
+        blocks.append("LEVERAGE_TOO_HIGH")
+
+    # Lógica operacional para Long
+    elif (
+        btc_trend in ["LATERAL", "ALTA"]
+        and daily_trend in ["LATERAL", "ALTA"]
+        and h4_context == "SUPORTE_COM_REJEICAO"
+        and m5_context == "ROMPIMENTO_LOCAL_COM_VOLUME"
+        and buyer_volume == "AUMENTANDO"
+        and seller_volume == "CAINDO"
+        and distance_to_resistance == "BOA"
+    ):
+        decision = "OPERAR_COM_CAUTELA"
+        direction = "LONG"
+        confidence = "MEDIA_ALTA"
+        risk_status = "CONTROLADO"
+        action_recommended = "AGUARDAR_RETESTE_E_PREPARAR_PLANO"
+        entry_instruction = "Existe oportunidade de Long, mas a entrada ideal é no reteste ou pullback curto."
+        can_prepare_order_plan = True
+        warnings.append("Evitar entrada esticada após candles fortes.")
+        warnings.append("Confirmar se o BTC continua sem pressão contrária.")
+        warnings.append("Usar invalidação técnica clara.")
+
+    # Lógica para aguardar
+    else:
+        decision = "AGUARDAR"
+        direction = "NENHUMA"
+        confidence = "BAIXA"
+        risk_status = "INDEFINIDO"
+        action_recommended = "MONITORAR_MERCADO"
+        entry_instruction = "Não existe confirmação suficiente para entrada agora."
+        can_prepare_order_plan = False
+        warnings.append("Sem confluência suficiente para operação.")
+
+    forbidden_actions = [
+        "Não operar por desespero.",
+        "Não aumentar mão para recuperar prejuízo.",
+        "Não entrar contra BTC forte.",
+        "Não operar no meio do canal sem confirmação.",
+        "Não usar alavancagem excessiva.",
+        "Não ignorar invalidação técnica.",
+    ]
+
+    return {
+        "ok": True,
+        "route": "/api/mec-decision-engine",
+        "action": "MEC_DECISION_ENGINE",
+        "objective": objective,
+        "symbol": symbol,
+        "decision": decision,
+        "direction": direction,
+        "confidence": confidence,
+        "risk_status": risk_status,
+        "action_recommended": action_recommended,
+        "entry_instruction": entry_instruction,
+        "protection_instruction": protection_instruction,
+        "can_prepare_order_plan": can_prepare_order_plan,
+        "market_context": market_context,
+        "risk_context": risk_context,
+        "distance_to_invalidation_percent": distance_to_invalidation_percent,
+        "distance_to_liquidation_percent": distance_to_liquidation_percent,
+        "forbidden_actions": forbidden_actions,
+        "warnings": warnings,
+        "blocks": blocks,
+        "trading_enabled": False,
+        "testnet_orders_enabled": False,
+        "real_orders_enabled": False,
+        "safety_status": "ANALISE_OPERACIONAL_SEM_EXECUCAO",
+        "next_step": "EXIBIR_DECISAO_MEC_NO_DASHBOARD",
+        "message": "Cérebro MEC analisou o cenário. Nenhuma ordem foi enviada.",
+    }
+
 HTML = """
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -1348,6 +1607,64 @@ HTML = """
             Robô observador do Método Águia Cripto — modo seguro, educacional e sem execução de ordens.
         </p>
         <p class="muted">Última atualização: {{ summary.updated_at }}</p>
+
+<div class="card">
+    <h2>🧠 Cérebro MEC — Decisão Operacional</h2>
+    <p class="muted">
+        Este bloco representa a inteligência central do robô: leitura do mercado,
+        direção provável, confiança, risco e próxima ação. Nenhuma ordem é executada automaticamente.
+    </p>
+
+    <div class="grid">
+        <div class="box">
+            <strong>Ação:</strong><br>
+            <span id="mec-action">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Objetivo:</strong><br>
+            <span id="mec-objective">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Decisão:</strong><br>
+            <span id="mec-decision">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Direção:</strong><br>
+            <span id="mec-direction">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Confiança:</strong><br>
+            <span id="mec-confidence">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Status do risco:</strong><br>
+            <span id="mec-risk">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Preparar plano?</strong><br>
+            <span id="mec-can-plan">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Próxima etapa:</strong><br>
+            <span id="mec-next">Carregando...</span>
+        </div>
+    </div>
+
+    <div class="alert" id="mec-entry">
+        Carregando instrução de entrada...
+    </div>
+
+    <div class="alert" id="mec-warning">
+        Carregando alertas operacionais...
+    </div>
+</div>
 
         <div class="card">
             <h2>Resumo do Ciclo</h2>
@@ -2162,6 +2479,43 @@ HTML = """
                 });
         }
 
+function loadMecDecisionEngine() {
+    fetch("/api/mec-decision-engine")
+        .then(function (response) {
+            return response.json();
+        })
+        .then(function (data) {
+            setText("mec-action", data.action || "-");
+            setText("mec-objective", data.objective || "-");
+            setText("mec-decision", data.decision || "-");
+            setText("mec-direction", data.direction || "-");
+            setText("mec-confidence", data.confidence || "-");
+            setText("mec-risk", data.risk_status || "-");
+            setText("mec-can-plan", data.can_prepare_order_plan ? "Sim" : "Não");
+            setText("mec-next", data.next_step || "-");
+
+            setText("mec-entry", data.entry_instruction || "Sem instrução de entrada.");
+
+            var warnings = data.warnings || [];
+            if (warnings.length > 0) {
+                setText("mec-warning", warnings.join(" | "));
+            } else {
+                setText("mec-warning", "Nenhum alerta operacional encontrado.");
+            }
+        })
+        .catch(function (error) {
+            setText("mec-action", "ERRO");
+            setText("mec-decision", "ERRO AO CARREGAR");
+            setText("mec-direction", "-");
+            setText("mec-confidence", "-");
+            setText("mec-risk", "-");
+            setText("mec-can-plan", "Não");
+            setText("mec-next", "-");
+            setText("mec-entry", "Não foi possível carregar o Cérebro MEC: " + error);
+            setText("mec-warning", "Análise operacional permaneceu bloqueada por segurança.");
+        });
+}
+
         function loadHumanConfirm() {
             fetch("/api/human-confirm")
                 .then(function (response) {
@@ -2227,6 +2581,7 @@ function loadTestnetSimulation() {
         });
 }
 
+        loadMecDecisionEngine();
         loadOrderPlan();
         loadHumanConfirm();
         loadTestnetSimulation();
@@ -2339,6 +2694,14 @@ def api_risk_final_validation():
 @app.route("/api/testnet-simulation")
 def api_testnet_simulation():
     return jsonify(build_testnet_simulation())
+
+@app.route("/api/manual-test-authorization")
+def api_manual_test_authorization():
+    return jsonify(build_manual_test_authorization())
+
+@app.route("/api/mec-decision-engine")
+def api_mec_decision_engine():
+    return jsonify(build_mec_decision_engine())
 
 @app.route("/health")
 def health():
