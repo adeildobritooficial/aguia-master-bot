@@ -1070,6 +1070,73 @@ def build_risk_final_validation():
         "safety_note": "Esta etapa apenas valida risco. Não executa ordem real nem testnet.",
     }
 
+def build_testnet_simulation():
+    """
+    Simulação Testnet Controlada.
+    Esta função NÃO envia ordem para a Binance.
+    Ela apenas simula a próxima etapa após a validação final do motor de risco.
+    """
+
+    validation = build_risk_final_validation()
+
+    simulation_steps = [
+        "1. Ler proposta segura da ordem.",
+        "2. Confirmar que houve validação humana.",
+        "3. Confirmar validação final do motor de risco.",
+        "4. Conferir se execução automática continua bloqueada.",
+        "5. Preparar simulação didática da ordem.",
+        "6. Manter envio real e testnet bloqueados até autorização futura.",
+    ]
+
+    simulated_order = {
+        "symbol": validation.get("symbol", "ETHUSDT"),
+        "side": validation.get("side", "BUY"),
+        "order_type": validation.get("order_type", "LIMIT"),
+        "entry_price": validation.get("entry_price"),
+        "quantity": validation.get("quantity"),
+        "margin_usdt": validation.get("margin_usdt"),
+        "leverage": validation.get("leverage"),
+        "notional_usdt": validation.get("notional_usdt"),
+        "partial_take_profit_price": validation.get("partial_take_profit_price"),
+        "partial_close_percent": validation.get("partial_close_percent"),
+        "invalidation_price": validation.get("invalidation_price"),
+        "reduce_only_for_entry": False,
+        "reduce_only_for_partial_exit": True,
+    }
+
+    return {
+        "ok": True,
+        "route": "/api/testnet-simulation",
+        "action": "TESTNET_SIMULATION_ONLY",
+        "execution_status": "NÃO EXECUTADO",
+        "simulation_status": "SIMULAÇÃO PREPARADA",
+        "environment": "BINANCE_FUTURES_TESTNET_SIMULATED",
+        "decision": validation.get("decision", "AGUARDAR"),
+        "risk_level": validation.get("risk_level", "INDEFINIDO"),
+        "human_confirmation_required": True,
+        "risk_engine_required": True,
+        "manual_final_approval_required": True,
+        "trading_enabled": False,
+        "testnet_orders_enabled": False,
+        "real_orders_enabled": False,
+        "safety_status": "BLOQUEADO PARA EXECUÇÃO",
+        "next_step": "AGUARDAR_AUTORIZACAO_PARA_TESTE_CONTROLADO",
+        "simulated_order": simulated_order,
+        "simulation_steps": simulation_steps,
+        "message": "Simulação testnet controlada preparada. Nenhuma ordem foi enviada para a Binance.",
+        "safety_note": "Esta etapa é apenas uma simulação educacional. Não executa ordem real nem testnet.",
+        "warnings": [
+            "Execução automática continua bloqueada.",
+            "Teste real na Testnet ainda depende de autorização humana futura.",
+            "Nenhuma ordem foi enviada para a Binance nesta etapa.",
+        ],
+        "blocks": [
+            "TRADING_ENABLED_FALSE",
+            "TESTNET_ORDERS_ENABLED_FALSE",
+            "REAL_ORDERS_ENABLED_FALSE",
+        ],
+    }
+
 HTML = """
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -1919,6 +1986,104 @@ HTML = """
 })();
 </script>
 
+<div class="card">
+    <h2>Simulação Testnet Controlada</h2>
+    <p class="muted">
+        Esta etapa apenas prepara uma simulação didática em ambiente testnet.
+        Nenhuma ordem é enviada automaticamente para a Binance.
+    </p>
+
+    <div class="grid">
+        <div class="box">
+            <strong>Ação:</strong><br>
+            <span id="sim-action">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Status:</strong><br>
+            <span id="sim-status">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Execução:</strong><br>
+            <span id="sim-execution">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Segurança:</strong><br>
+            <span id="sim-safety">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Ativo:</strong><br>
+            <span id="sim-symbol">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Direção:</strong><br>
+            <span id="sim-side">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Tipo:</strong><br>
+            <span id="sim-type">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Entrada:</strong><br>
+            <span id="sim-entry">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Margem:</strong><br>
+            <span id="sim-margin">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Alavancagem:</strong><br>
+            <span id="sim-leverage">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Valor nocional:</strong><br>
+            <span id="sim-notional">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Quantidade:</strong><br>
+            <span id="sim-quantity">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Take Profit parcial:</strong><br>
+            <span id="sim-take-profit">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Saída parcial:</strong><br>
+            <span id="sim-partial-close">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Invalidação:</strong><br>
+            <span id="sim-invalidation">Carregando...</span>
+        </div>
+
+        <div class="box">
+            <strong>Reduce Only parcial:</strong><br>
+            <span id="sim-reduce-only">Carregando...</span>
+        </div>
+    </div>
+
+    <div class="alert" id="sim-message">
+        Carregando simulação testnet controlada...
+    </div>
+
+    <div class="alert" id="sim-warning">
+        Nenhuma ordem será enviada automaticamente.
+    </div>
+</div>
+
         <div class="card">
             <h2>Segurança Operacional</h2>
 
@@ -2021,8 +2186,50 @@ HTML = """
                 });
         }
 
+function loadTestnetSimulation() {
+    fetch("/api/testnet-simulation")
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
+            const simulated = data.simulated_order || {};
+
+            setText("sim-action", data.action || "-");
+            setText("sim-status", data.simulation_status || "-");
+            setText("sim-execution", data.execution_status || "-");
+            setText("sim-safety", data.safety_status || "-");
+
+            setText("sim-symbol", simulated.symbol || data.symbol || "-");
+            setText("sim-side", simulated.side || data.side || "-");
+            setText("sim-type", simulated.order_type || data.order_type || "-");
+            setText("sim-entry", simulated.entry_price || data.entry_price || "-");
+
+            setText("sim-margin", String(simulated.margin_usdt || data.margin_usdt || "-") + " USDT");
+            setText("sim-leverage", String(simulated.leverage || data.leverage || "-") + "x");
+            setText("sim-notional", String(simulated.notional_usdt || data.notional_usdt || "-") + " USDT");
+            setText("sim-quantity", simulated.quantity || data.quantity || "-");
+
+            setText("sim-take-profit", simulated.partial_take_profit_price || data.partial_take_profit_price || "-");
+            setText("sim-partial-close", String(data.partial_close_percent || "-") + "%");
+            setText("sim-invalidation", simulated.invalidation_price || data.invalidation_price || "-");
+            setText("sim-reduce-only", simulated.reduce_only_for_partial_exit ? "Sim" : "Não");
+
+            setText("sim-message", data.message || "Simulação testnet controlada carregada.");
+            setText("sim-warning", data.safety_note || "Nenhuma ordem será enviada automaticamente.");
+        })
+        .catch(function(error) {
+            setText("sim-action", "ERRO");
+            setText("sim-status", "ERRO AO CARREGAR");
+            setText("sim-execution", "NÃO EXECUTADO");
+            setText("sim-safety", "BLOQUEADO PARA EXECUÇÃO");
+            setText("sim-message", "Não foi possível carregar a simulação testnet: " + error);
+            setText("sim-warning", "A simulação permaneceu bloqueada por segurança.");
+        });
+}
+
         loadOrderPlan();
         loadHumanConfirm();
+        loadTestnetSimulation();
     </script>
 </body>
 </html>
@@ -2128,6 +2335,10 @@ def api_human_confirm():
 @app.route("/api/risk-final-validation")
 def api_risk_final_validation():
     return jsonify(build_risk_final_validation())
+
+@app.route("/api/testnet-simulation")
+def api_testnet_simulation():
+    return jsonify(build_testnet_simulation())
 
 @app.route("/health")
 def health():
