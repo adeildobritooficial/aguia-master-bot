@@ -1,0 +1,46 @@
+51:def now_utc():
+55:def safe_float(value, default=0.0):
+64:def safe_round(value, decimals=2):
+71:def format_money(value):
+85:def format_price(value):
+97:def binance_get(path, params=None):
+109:def get_24h_tickers():
+141:def get_klines(symbol, interval, limit=120):
+175:def sma(values, period):
+182:def candle_direction(candle):
+192:def analyze_trend(candles):
+229:def analyze_levels(candles, lookback=50):
+278:def analyze_volume(candles, period=20):
+309:def analyze_candles(candles):
+361:def analyze_btc_context():
+405:def decide_direction(trend_4h, trend_5m, levels_5m, volume, candles, btc_context):
+489:def calculate_score(direction_data, trend_4h, trend_5m, levels_5m, volume, candles, btc_context):
+558:def classify_setup_phase(score_data, direction_data, levels_5m, volume, candles):
+591:def build_risk_engine(score_data, direction_data, btc_context):
+638:def build_educational_3x(score_data, direction_data):
+670:def analyze_asset(ticker, btc_context):
+752:def build_general_decision(assets, btc_context):
+802:def build_report():
+876:def build_safe_order_plan():
+919:def build_human_confirmation():
+942:def build_risk_final_validation():
+1073:def build_testnet_simulation():
+1140:def build_manual_test_authorization():
+1200:def build_mec_decision_engine():
+1399:def build_controlled_testnet_executor():
+1542:def build_final_testnet_execution_authorization():
+2945:def money_filter(value):
+2950:def price_filter(value):
+2955:def home():
+2991:def dashboard():
+3007:def api_report():
+3012:def api_binance_testnet():
+3032:def api_order_plan():
+3037:def api_human_confirm():
+3041:def api_risk_final_validation():
+3045:def api_testnet_simulation():
+3049:def api_manual_test_authorization():
+3053:def api_controlled_testnet_executor():
+3058:def api_final_testnet_execution_authorization():
+3062:def api_mec_decision_engine():
+3066:def health():
