@@ -7,6 +7,7 @@ from flask import Flask, jsonify, render_template_string
 
 from exchange_binance import get_binance_testnet_diagnostic
 
+from core.safety_status_engine import build_safety_status
 
 app = Flask(__name__)
 
@@ -3061,6 +3062,18 @@ def api_final_testnet_execution_authorization():
 @app.route("/api/mec-decision-engine")
 def api_mec_decision_engine():
     return jsonify(build_mec_decision_engine())
+
+@app.route("/api/safety-status")
+def api_safety_status():
+    safety_status = build_safety_status(
+        trading_enabled=False,
+        real_orders_enabled=False,
+        testnet_orders_enabled=False,
+        human_confirm_required=True,
+        environment="BINANCE_FUTURES_TESTNET",
+    )
+
+    return jsonify(safety_status)
 
 @app.route("/health")
 def health():
