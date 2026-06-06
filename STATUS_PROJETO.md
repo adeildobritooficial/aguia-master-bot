@@ -75,7 +75,37 @@ OBSERVADOR EDUCACIONAL / TESTNET CONTROLADO
 - Real Executor bloqueado
 
 ## 10. Status da conexão Binance Testnet
+
 A conta Binance Futures Demo/Testnet já possui saldo de teste visível e API privada configurada para diagnóstico.
+
+### Resultado no Render
+
+O endpoint `/api/binance-testnet` existe e responde, porém a Binance bloqueia o acesso privado vindo do servidor Render com erro de localização restrita.
+
+Conclusão:
+- Render pode continuar sendo usado para dashboard, health check e dados públicos.
+- Diagnóstico privado Binance Testnet pelo Render fica limitado por bloqueio geográfico.
+- Execução privada Testnet deve ser validada localmente no PC antes de qualquer evolução.
+
+### Resultado local no PC
+
+Teste realizado localmente com:
+
+- `http://127.0.0.1:10000/health`
+- `http://127.0.0.1:10000/api/binance-testnet`
+
+Resultado:
+- Health check: OK
+- Binance Testnet: conectada
+- API Key Testnet: configurada
+- API Secret Testnet: configurada
+- Saldo USDT Testnet: consultado com sucesso
+- Posições abertas: 0
+- Ordens abertas: 0
+- Trading enabled: false
+- Real orders enabled: false
+- Testnet orders enabled: false
+- Safety status: BLOQUEADO PARA EXECUÇÃO
 
 Regras obrigatórias:
 - Não executar ordens nesta fase
@@ -138,9 +168,9 @@ Somente após maturidade comprovada em Testnet, relatórios consistentes, logs, 
 Concluir MARCO 1 — Robô organizado e seguro.
 
 Tarefas imediatas:
-1. Criar este arquivo STATUS_PROJETO.md
-2. Salvar no GitHub
-3. Conferir variáveis de ambiente no Render
-4. Testar endpoint /health
-5. Testar diagnóstico Binance Testnet
-6. Revisar app.py para identificar duplicações e organizar próximos módulos
+1. Criar este arquivo STATUS_PROJETO.md — CONCLUÍDO
+2. Salvar no GitHub — CONCLUÍDO
+3. Conferir variáveis de ambiente no Render — CONCLUÍDO
+4. Testar endpoint /health — CONCLUÍDO
+5. Testar diagnóstico Binance Testnet — CONCLUÍDO LOCALMENTE
+6. Revisar app.py para identificar duplicações e organizar próximos módulos — PRÓXIMO PASSO
