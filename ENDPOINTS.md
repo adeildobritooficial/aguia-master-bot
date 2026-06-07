@@ -188,6 +188,28 @@ Status seguro esperado:
 - `human_confirm_required: true`
 - `safety_blockers: []`
 
+---
+
+### `/api/system-status`
+
+Exibe o status geral consolidado do robô, juntando o Safety Status Engine e o Config Status Engine.
+
+Status:
+- Funcional no Codespaces
+- Funcional no Render
+- Não consulta corretora
+- Não executa ordens
+- Não altera posições
+
+Status seguro esperado:
+- `system_status: ONLINE_SEGURO`
+- `orders_blocked: true`
+- `real_blocked: true`
+- `testnet_blocked: true`
+- `human_confirm_required: true`
+- `config_safety_status: CONFIG_SEGURA`
+- `safety_status: SEGURO_BLOQUEADO`
+
 ## Regra geral
 
 Nenhum endpoint pode executar ordens enquanto:

@@ -188,3 +188,8 @@ Tarefas imediatas:
    - Criar rota /api/config-status — CONCLUÍDO
    - Testar /api/config-status no Codespaces — CONCLUÍDO
    - Testar /api/config-status no Render — CONCLUÍDO
+      - Criar core/system_status_engine.py — CONCLUÍDO
+   - Testar importação do System Status Engine — CONCLUÍDO
+   - Criar rota /api/system-status — CONCLUÍDO
+   - Testar /api/system-status no Codespaces — CONCLUÍDO
+   - Testar /api/system-status no Render — CONCLUÍDO
