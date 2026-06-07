@@ -183,3 +183,8 @@ Tarefas imediatas:
    - Criar rota /api/safety-status — CONCLUÍDO
    - Testar /api/safety-status no Codespaces — CONCLUÍDO
    - Testar /api/safety-status no Render — CONCLUÍDO
+      - Criar core/config_status_engine.py — CONCLUÍDO
+   - Testar importação do Config Status Engine — CONCLUÍDO
+   - Criar rota /api/config-status — CONCLUÍDO
+   - Testar /api/config-status no Codespaces — CONCLUÍDO
+   - Testar /api/config-status no Render — CONCLUÍDO

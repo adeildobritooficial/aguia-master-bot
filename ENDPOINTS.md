@@ -168,6 +168,26 @@ Status seguro esperado:
 - `testnet_orders_enabled: false`
 - `human_confirm_required: true`
 
+---
+
+### `/api/config-status`
+
+Exibe o status seguro das configurações operacionais do robô.
+
+Status:
+- Funcional no Codespaces
+- Funcional no Render
+- Não consulta corretora
+- Não executa ordens
+
+Status seguro esperado:
+- `config_safety_status: CONFIG_SEGURA`
+- `binance_use_testnet: true`
+- `trading_enabled: false`
+- `real_trading_enabled: false`
+- `human_confirm_required: true`
+- `safety_blockers: []`
+
 ## Regra geral
 
 Nenhum endpoint pode executar ordens enquanto:
