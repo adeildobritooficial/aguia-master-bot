@@ -9,6 +9,7 @@ from exchange_binance import get_binance_testnet_diagnostic
 
 from core.safety_status_engine import build_safety_status
 from core.config_status_engine import build_config_status
+from core.system_status_engine import build_system_status
 
 app = Flask(__name__)
 
@@ -3079,6 +3080,10 @@ def api_safety_status():
 @app.route("/api/config-status")
 def api_config_status():
     return jsonify(build_config_status())
+
+@app.route("/api/system-status")
+def api_system_status():
+    return jsonify(build_system_status())
 
 @app.route("/health")
 def health():
