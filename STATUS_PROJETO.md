@@ -173,4 +173,13 @@ Tarefas imediatas:
 3. Conferir variáveis de ambiente no Render — CONCLUÍDO
 4. Testar endpoint /health — CONCLUÍDO
 5. Testar diagnóstico Binance Testnet — CONCLUÍDO LOCALMENTE
-6. Revisar app.py para identificar duplicações e organizar próximos módulos — PRÓXIMO PASSO
+6. Revisar app.py para identificar duplicações e organizar próximos módulos — EM ANDAMENTO
+   - Mapear rotas do app.py — CONCLUÍDO
+   - Mapear funções do app.py — CONCLUÍDO
+   - Criar REVISAO_APP.md — CONCLUÍDO
+   - Criar pasta core/ — CONCLUÍDO
+   - Criar core/safety_status_engine.py — CONCLUÍDO
+   - Testar importação do Safety Status Engine — CONCLUÍDO
+   - Criar rota /api/safety-status — CONCLUÍDO
+   - Testar /api/safety-status no Codespaces — CONCLUÍDO
+   - Testar /api/safety-status no Render — CONCLUÍDO
