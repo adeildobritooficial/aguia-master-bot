@@ -189,6 +189,7 @@ Tarefas imediatas:
    - Testar /api/config-status no Codespaces — CONCLUÍDO
    - Testar /api/config-status no Render — CONCLUÍDO
       - Criar core/system_status_engine.py — CONCLUÍDO
+         - Criar CHECKLIST_SEGURANCA.md — CONCLUÍDO
    - Testar importação do System Status Engine — CONCLUÍDO
    - Criar rota /api/system-status — CONCLUÍDO
    - Testar /api/system-status no Codespaces — CONCLUÍDO
